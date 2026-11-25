@@ -61,7 +61,7 @@ function Act({ icon, label, onClick }: { icon: ReactNode; label: string; onClick
 }
 
 /** Copy button with a menu: with timestamps (default), without, or Markdown with the source. */
-function CopyMenu({ text, ep }: { text: string; ep: Episode }) {
+export function CopyMenu({ text, ep }: { text: string; ep: Episode }) {
   const { open, setOpen, ref } = usePop();
   const [done, setDone] = useState(false);
   const copy = (kind: CopyKind) => { setOpen(false); void toClipboard(copyText(text, kind, ep)); setDone(true); window.setTimeout(() => setDone(false), 1400); };

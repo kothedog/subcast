@@ -23,6 +23,13 @@ export function origScale(s: Pick<Settings, "subtitleScale" | "subtitleSize" | "
   return s.subtitleOrigScale ?? subScale(s);
 }
 
+export const CHAT_MIN = 0.85, CHAT_MAX = 1.5;
+
+/** AI answers' text size multiplier: the slider's, else the old "标准 / 大". */
+export function chatScaleOf(s: Pick<Settings, "chatScale" | "chatSize">): number {
+  return s.chatScale ?? (s.chatSize === "l" ? 1.12 : 1);
+}
+
 const clampScale = (v: number) => Math.round(Math.min(SCALE_MAX, Math.max(SCALE_MIN, v)) * 20) / 20;
 
 /** Chinese line size. Until the original line has its own size, it moves along. */
@@ -56,17 +63,17 @@ export function setSubLift(v: number) {
 
 export function useReadingSettings() {
   // Only these fields: subscribing to all settings re-rendered the whole app on any change.
-  const s = useStore(useShallow((x) => ({ subtitleSize: x.settings.subtitleSize, subtitleScale: x.settings.subtitleScale, subtitleOrigScale: x.settings.subtitleOrigScale, subtitleLift: x.settings.subtitleLift, subtitleFont: x.settings.subtitleFont, subtitleLook: x.settings.subtitleLook, chatSize: x.settings.chatSize, audioNextLine: x.settings.audioNextLine })));
+  const s = useStore(useShallow((x) => ({ subtitleSize: x.settings.subtitleSize, subtitleScale: x.settings.subtitleScale, subtitleOrigScale: x.settings.subtitleOrigScale, subtitleLift: x.settings.subtitleLift, subtitleFont: x.settings.subtitleFont, subtitleLook: x.settings.subtitleLook, chatSize: x.settings.chatSize, chatScale: x.settings.chatScale, audioNextLine: x.settings.audioNextLine })));
   useEffect(() => {
     const root = document.documentElement.style;
     root.setProperty("--sub-scale", String(subScale(s)));
     root.setProperty("--sub-orig-scale", String(origScale(s)));
     root.setProperty("--sub-lift", `${s.subtitleLift ?? 0}cqh`);
-    root.setProperty("--chat-scale", s.chatSize === "l" ? "1.12" : "1");
+    root.setProperty("--chat-scale", String(chatScaleOf(s)));
     const f = POSTER_FONTS.find((x) => x.id === SUB_FONTS[s.subtitleFont ?? "sans"]);
     if (f?.css) void loadCss(f.css).catch(() => {});
     root.setProperty("--sub-font", f ? `${f.family}, var(--font, system-ui)` : "inherit");
     document.documentElement.dataset.subLook = s.subtitleLook ?? "outline";
     document.documentElement.dataset.nextLine = s.audioNextLine ? "on" : "off";
-  }, [s.subtitleSize, s.subtitleScale, s.subtitleOrigScale, s.subtitleLift, s.subtitleFont, s.subtitleLook, s.chatSize, s.audioNextLine]);
+  }, [s.subtitleSize, s.subtitleScale, s.subtitleOrigScale, s.subtitleLift, s.subtitleFont, s.subtitleLook, s.chatSize, s.chatScale, s.audioNextLine]);
 }

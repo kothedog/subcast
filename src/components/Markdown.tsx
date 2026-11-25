@@ -1,16 +1,22 @@
 import { Fragment, memo, type ReactNode } from "react";
 import { Scissors } from "lucide-react";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { parseClock } from "../lib/format";
 import { t, useLang } from "../lib/i18n";
 
-// A small Markdown renderer for model answers: headings, lists, bold, inline code, and [mm:ss] timestamps that seek.
-const INLINE = /(\*\*[^*]+\*\*|`[^`]+`|\[\d{1,2}:\d{2}(?::\d{2})?(?:\s*[-–~至]\s*\d{1,2}:\d{2}(?::\d{2})?)?\](?:\s*[-–~至]\s*\[\d{1,2}:\d{2}(?::\d{2})?\])?)/g;
+// A small Markdown renderer for model answers: headings, code blocks, lists, bold, italic, links, inline code, and [mm:ss] timestamps that seek.
+const INLINE = /(\*\*[^*]+\*\*|\*(?!\s)[^*]+(?<!\s)\*|`[^`]+`|\[[^\]]+\]\(https?:\/\/[^)\s]+\)|\[\d{1,2}:\d{2}(?::\d{2})?(?:\s*[-–~至]\s*\d{1,2}:\d{2}(?::\d{2})?)?\](?:\s*[-–~至]\s*\[\d{1,2}:\d{2}(?::\d{2})?\])?)/g;
 
 function inline(text: string, onSeek: (t: number) => void, key: string, onClip?: (start: number, end?: number) => void): ReactNode[] {
   return text.split(INLINE).map((part, i) => {
     const k = `${key}-${i}`;
     if (part.startsWith("**") && part.endsWith("**")) return <strong key={k}>{part.slice(2, -2)}</strong>;
+    if (part.startsWith("*") && part.endsWith("*") && part.length > 2) return <em key={k}>{part.slice(1, -1)}</em>;
     if (part.startsWith("`") && part.endsWith("`")) return <code key={k}>{part.slice(1, -1)}</code>;
+    const linkMatch = part.match(/^\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)$/);
+    if (linkMatch) {
+      return <a key={k} href={linkMatch[2]} className="notes-link" onClick={(e) => { e.preventDefault(); void openUrl(linkMatch[2]); }}>{linkMatch[1]}</a>;
+    }
     if (part.startsWith("[")) {
       const stamps = [...part.matchAll(/\b(\d{1,2}:\d{2}(?::\d{2})?)\b/g)];
       if (stamps.length >= 2) {
@@ -51,6 +57,13 @@ export const Markdown = memo(function Markdown({ text, onSeek, onClip }: { text:
   // A list whose every item starts with a timestamp is a timeline (chapters), drawn as one.
   let timeline = true;
   let rows: string[][] = [];
+  let inCode = false;
+  let codeLines: string[] = [];
+  const flushCode = () => {
+    if (!codeLines.length && !inCode) return;
+    blocks.push(<pre key={`c${blocks.length}`} className="md-code"><code>{codeLines.join("\n")}</code></pre>);
+    codeLines = [];
+  };
   const flushTable = () => {
     if (!rows.length) return;
     const [head, ...body] = rows;
@@ -72,6 +85,12 @@ export const Markdown = memo(function Markdown({ text, onSeek, onClip }: { text:
   };
   text.split("\n").forEach((raw, i) => {
     const line = raw.trimEnd();
+    if (line.trim().startsWith("```")) {
+      if (inCode) { flushCode(); inCode = false; }
+      else { flush(); inCode = true; }
+      return;
+    }
+    if (inCode) { codeLines.push(raw); return; }
     const cells = line.trim().match(/^\|(.*)\|$/);
     if (cells) {
       if (list.length) flush();
@@ -96,6 +115,7 @@ export const Markdown = memo(function Markdown({ text, onSeek, onClip }: { text:
     else if (line.trim() === "---") blocks.push(<hr key={i} />);
     else if (line.trim()) blocks.push(<p key={i}>{inline(line, onSeek, `p${i}`, onClip)}</p>);
   });
+  if (inCode) flushCode();
   flush();
   return <div className="markdown">{blocks}</div>;
 });

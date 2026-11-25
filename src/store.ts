@@ -31,7 +31,7 @@ export interface PlayerHandle {
   episodeId?: string;
 }
 
-export type SettingsSection = "subtitles" | "ai" | "general" | "learn" | "about" | "model" | "asr" | "reading" | "tts" | "shortcuts" | "storage";
+export type SettingsSection = "subtitles" | "ai" | "general" | "learn" | "about" | "model" | "asr" | "reading" | "tts" | "shortcuts" | "storage" | "agents" | "network";
 
 interface State {
   speaking: boolean;
@@ -101,6 +101,7 @@ interface State {
 const CHECK_EVERY = 30 * 60_000;
 
 let toastTimer: number | undefined;
+let lastDbVersion = 0;
 
 function sameView(a: View, b: View): boolean {
   if (a.kind !== b.kind) return false;
@@ -134,10 +135,23 @@ export const useStore = create<State>((set, get) => ({
     setTranslateNames(settings.translateShowNames);
     void api.setMenuLabels([t("设置…")]).catch(() => {});
     set({ settings, shows, ready: true });
+    void api.dbDataVersion().then((v) => { lastDbVersion = v; }).catch(() => {});
     void get().checkUpdates();
     // Periodically, and when the window comes back after a while (the app may sit in the background for hours).
     window.setInterval(() => void get().checkUpdates(), CHECK_EVERY);
-    window.addEventListener("focus", () => { if (Date.now() - get().lastChecked > 10 * 60_000) void get().checkUpdates(); });
+    window.addEventListener("focus", () => {
+      if (Date.now() - get().lastChecked > 10 * 60_000) void get().checkUpdates();
+      void api.dbDataVersion().then(async (v) => {
+        if (!v || v === lastDbVersion) return;
+        lastDbVersion = v;
+        invalidateEpisodes();
+        const freshSettings = await loadSettings();
+        setLang(freshSettings.uiLang);
+        setTranslateNames(freshSettings.translateShowNames);
+        set({ settings: freshSettings });
+        await get().reloadShows();
+      }).catch(() => {});
+    });
   },
   lastChecked: 0,
   async checkUpdates() {
@@ -184,8 +198,9 @@ export const useStore = create<State>((set, get) => ({
     set({ settings });
     window.clearTimeout(settingsTimer);
     settingsTimer = 0;
-    if (lazy) { settingsTimer = window.setTimeout(() => { settingsTimer = 0; void api.setSettings(get().settings); }, 400); return; }
+    if (lazy) { settingsTimer = window.setTimeout(() => { settingsTimer = 0; void api.setSettings(get().settings).then(() => api.dbDataVersion()).then((v) => { lastDbVersion = v; }).catch(() => {}); }, 400); return; }
     await api.setSettings(settings);
+    void api.dbDataVersion().then((v) => { lastDbVersion = v; }).catch(() => {});
   },
   openEpisode(ep) {
     // The episode page decides whether to load it into the player (it leaves a playing episode alone).

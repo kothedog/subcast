@@ -3,7 +3,8 @@
 // "订阅" for everything picked; shows already subscribed are skipped. Nothing starts checked: an account can
 // follow hundreds of channels, so the list has a filter and the user picks what they want.
 import { useEffect, useRef, useState } from "react";
-import { Check, FileUp, Loader2, Search, X, Youtube } from "lucide-react";
+import { Check, FileUp, Loader2, Search, Youtube } from "lucide-react";
+import { TextField } from "./TextField";
 import { invoke } from "@tauri-apps/api/core";
 import { api, errorText, needsBrowserAccess, rawErrorText } from "../lib/api";
 import { BrowserAccess, browserName } from "./BrowserAccess";
@@ -134,12 +135,7 @@ export function ImportPanel({ onDone }: { onDone?: () => void }) {
         </div>
         {items.length > 6 && (
           <div className="pick-tools">
-            <label className={`list-filter ${query ? "on" : ""}`}>
-              <Search size={14} />
-              <input value={query} autoFocus spellCheck={false} autoCapitalize="off" autoCorrect="off" placeholder={t("按名字筛选")} aria-label={t("按名字筛选")}
-                onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => { if (e.key === "Escape" && query) { e.stopPropagation(); setQuery(""); } }} />
-              {query && <button className="icon-btn sm" onClick={() => setQuery("")} aria-label={t("清除搜索")}><X size={13} /></button>}
-            </label>
+            <TextField size="sm" value={query} onValue={setQuery} icon={<Search size={14} />} clearable autoFocus placeholder={t("按名字筛选")} aria-label={t("按名字筛选")} />
           </div>
         )}
         <div className="import-list">

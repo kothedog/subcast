@@ -9,10 +9,30 @@ export const NO_AUTO = { autoCapitalize: "off", autoCorrect: "off", spellCheck: 
 /** One default model for translation and the guide; Q&A starts with it and can switch in the chat box. */
 export function DefaultButton({ id, isDefault }: { id: string; isDefault: boolean }) {
   const saveSettings = useStore((s) => s.saveSettings);
+  const chatProvider = useStore((s) => s.settings.chatProvider);
+  const translateProvider = useStore((s) => s.settings.translateProvider);
   const mode = useStore((s) => s.settings.translateMode);
-  return isDefault
-    ? <p className="default-on small"><Check size={13} /> {t("当前默认模型")}</p>
-    : <button className="btn primary sm" onClick={() => void saveSettings({ translateProvider: id, chatProvider: id, chatModel: "", modelChosen: true, ...(mode === "google" ? { translateMode: "auto" } : {}) })}>{t("设为默认模型")}</button>;
+  const split = mode === "google" || chatProvider !== translateProvider;
+  const isChat = chatProvider === id;
+  const isTrans = translateProvider === id && mode !== "google";
+  const isBoth = isChat && isTrans;
+  const setAll = () => void saveSettings({ translateProvider: id, chatProvider: id, chatModel: "", modelChosen: true, ...(mode === "google" ? { translateMode: "auto" } : {}) });
+  if (isBoth || (!split && isDefault)) {
+    return <p className="default-on small"><Check size={13} /> {t("当前默认模型")}</p>;
+  }
+  if (split && (isChat || isTrans)) {
+    return (
+      <div className="default-split">
+        <p className="default-on small"><Check size={13} /> {isChat ? t("当前用于问答") : t("当前用于翻译")}</p>
+        <button className="btn ghost sm" onClick={setAll} title={t("将问答、导读和字幕翻译都切换为这个模型")}>{t("设为全部默认")}</button>
+      </div>
+    );
+  }
+  return (
+    <button className="btn primary sm" onClick={setAll} title={split ? t("将问答、导读和字幕翻译都切换为这个模型") : undefined}>
+      {t("设为默认模型")}
+    </button>
+  );
 }
 
 /** A key field. With `shared` (the AI-model key this service falls back to), a missing own key shows as
@@ -36,13 +56,14 @@ export function KeyField({ account, placeholder, shared }: { account: string; pl
     );
   }
   return <KeyRow key={account} has={has} value={key} onValue={setKey} placeholder={placeholder}
+    onCancel={own ? () => { setKey(""); setOwn(false); } : undefined}
     onSave={async () => { await api.setApiKey(account, key); setHas(!!key.trim()); setKey(""); }}
     onDelete={async () => { await api.setApiKey(account, ""); setHas(false); }} />;
 }
 
 /** A saved key reads as saved (a tinted row with a check and masked dots), not as an empty field;
  *  「更换」 opens the field again. */
-export function KeyRow({ has, value, onValue, onSave, onDelete, placeholder }: { has: boolean; value: string; onValue: (v: string) => void; onSave: () => Promise<void>; onDelete: () => Promise<void>; placeholder?: string }) {
+export function KeyRow({ has, value, onValue, onSave, onDelete, onCancel, placeholder }: { has: boolean; value: string; onValue: (v: string) => void; onSave: () => Promise<void>; onDelete: () => Promise<void>; onCancel?: () => void; placeholder?: string }) {
   const [editing, setEditing] = useState(false);
   if (has && !editing) {
     return (
@@ -57,7 +78,7 @@ export function KeyRow({ has, value, onValue, onSave, onDelete, placeholder }: {
     <div className="key-row">
       <input {...NO_AUTO} type="password" autoFocus={editing} value={value} onChange={(e) => onValue(e.target.value)} placeholder={placeholder ?? t("粘贴 API Key")} />
       <button className="btn sm" onClick={async () => { await onSave(); setEditing(false); }} disabled={!value.trim()}>{t("保存")}</button>
-      {has && <button className="btn ghost sm" onClick={() => { onValue(""); setEditing(false); }}>{t("取消")}</button>}
+      {(has || onCancel) && <button className="btn ghost sm" onClick={() => { onValue(""); setEditing(false); onCancel?.(); }}>{t("取消")}</button>}
     </div>
   );
 }

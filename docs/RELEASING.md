@@ -52,7 +52,7 @@ Server files: `/www/wwwroot/subcast-tools/ui/` on myvps, outside the website roo
 
 ## Remote config
 
-`https://subcast.qiaomu.ai/tools/config.json` (+ `.sig`), source in `server/deploy/remote-config.json`. Values that go stale outside our control and live on the Rust side, so a hot update can't change them. Today: `youtubeClients` (the YouTube API client names and versions caption fetching uses; when captions stop loading for everyone, try newer versions here first). Fetched with every update check, signed with the updater key, last good copy kept in settings. Publish:
+`https://subcast.qiaomu.ai/tools/config.json` (+ `.sig`), source in `server/deploy/remote-config.json`. Values that go stale outside our control and live on the Rust side, so a hot update can't change them. Today: `youtubeClients` (the YouTube API client names and versions caption fetching uses; when captions stop loading for everyone, try newer versions here first). Also `curatedYoutube` (optional): rss.qiaomu.ai / 精读 source id → YouTube channel id (`UC…`) or `"none"`, to correct or add the channel a curated show's videos come from (`crates/subcast-core/src/curated_video.rs` has the built-in table and finds new shows by name). Fetched with every update check, signed with the updater key, last good copy kept in settings. Publish:
 
 ```bash
 cp server/deploy/remote-config.json /tmp/config.json && rm -f /tmp/config.json.sig

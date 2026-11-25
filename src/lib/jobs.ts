@@ -5,6 +5,7 @@ import { api, rawErrorText, type AsrEvent, type Episode, type Provider, type Seg
 import { batches, batchShape, makeEpisodeContext, translateBatch, type Batch, type EpisodeContext } from "./ai";
 import { isChinese } from "./format";
 import { providerFor, useStore } from "../store";
+import { subtitleModeFor } from "./settings";
 import { refreshSaved } from "./offline";
 
 // Messages and errors are kept as the backend wrote them (so they can be matched) and translated with tr() where shown.
@@ -261,7 +262,8 @@ export async function translateEpisode(ep: Episode, t: Transcript, force?: Trans
  *  the subtitles on the video need the Chinese lines too. */
 export function autoTranslate(ep: Episode) {
   const t = useJobs.getState().transcripts[ep.id];
-  if (!t || useStore.getState().settings.subtitleMode === "original" || !needsTranslation(t)) return;
+  const subMode = subtitleModeFor(useStore.getState().settings, ep);
+  if (!t || subMode === "original" || !needsTranslation(t)) return;
   void loadTranslation(ep.id, t.segments.length).then(() => {
     const job = useJobs.getState().translations[ep.id];
     if (!job || job.running || job.error || job.items.every((x) => x != null)) return;

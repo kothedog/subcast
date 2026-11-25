@@ -22,7 +22,7 @@ export function YtButton({ channel, label, small }: { channel: string; label?: s
 export function AlsoOn({ feedUrl }: { feedUrl?: string }) {
   const l = showLinks(feedUrl);
   if (!l.bilibili) return null;
-  return <button className="link-btn also-on" onClick={() => void openUrl(l.bilibili!)}>{t("也在 B 站")}</button>;
+  return <button className="link-btn also-on" onClick={(e) => { e.stopPropagation(); void openUrl(l.bilibili!); }}>{t("也在 B 站")}</button>;
 }
 
 /** Discover's top banner: our own show, with subscribing in the app and on YouTube side by side. */
@@ -31,7 +31,7 @@ export function HomeShowBanner({ subscribed, busy, onSubscribe, onOpen, onHide }
   const yt = showLinks(p?.input).youtube;
   if (!p || !yt) return null;
   return (
-    <div className="home-show" role="button" tabIndex={0} onClick={onOpen} onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), onOpen())}>
+    <div className="home-show" role="button" tabIndex={0} onClick={onOpen} onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), e.stopPropagation(), onOpen())}>
       <button type="button" className="icon-btn sm home-show-close" title={t("不再显示")} aria-label={t("不再显示")} onClick={(e) => { e.stopPropagation(); onHide(); }}><X size={15} /></button>
       <img src={p.cover} alt="" />
       <div className="home-show-body">

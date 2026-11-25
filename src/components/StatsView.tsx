@@ -1,9 +1,9 @@
 // 收听统计: what the listening says about the listener, from the time actually spent playing (seeks don't count).
 // Everything is computed on this computer from the listens table. The one exception is the optional AI portrait,
 // which sends a short summary (show names, episode titles, hours) to the model the listener picked, and says so.
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
-import { Loader2, RefreshCw, Sparkles } from "lucide-react";
+import { Loader2, RefreshCw, Sparkles, Square } from "lucide-react";
 import { api, errorText, llmChat, type ListenRow } from "../lib/api";
 import { providerFor, useStore } from "../store";
 import { isChineseUi, t, tk, useLang } from "../lib/i18n";
@@ -53,7 +53,7 @@ const PERSONAS: { from: number; name: string; line: string }[] = [
 ];
 const personaOf = (h: number) => [...PERSONAS].reverse().find((p) => h >= p.from)!;
 
-interface ShowStat { id: string; title: string; cover: string; seconds: number; episodes: Set<string>; done: number; months: Set<string>; first: string; single: boolean }
+interface ShowStat { id: string; epId?: string; title: string; cover: string; seconds: number; episodes: Set<string>; done: number; months: Set<string>; first: string; single: boolean }
 
 export function StatsView() {
   const { go, shows: subscribed } = useStore(useShallow((s) => ({ go: s.go, shows: s.shows })));
@@ -102,7 +102,7 @@ export function StatsView() {
     for (const r of inRange) {
       const single = !r.showTitle || r.showId === "single";
       const key = single ? `ep:${r.episodeId}` : r.showId;
-      const x = shows.get(key) ?? { id: single ? "" : r.showId, title: single ? r.episodeTitle : r.showTitle, cover: r.cover, seconds: 0, episodes: new Set(), done: 0, months: new Set(), first: firstEver.get(r.showId) ?? r.day, single };
+      const x = shows.get(key) ?? { id: single ? "" : r.showId, epId: single ? r.episodeId : undefined, title: single ? r.episodeTitle : r.showTitle, cover: r.cover, seconds: 0, episodes: new Set(), done: 0, months: new Set(), first: firstEver.get(r.showId) ?? r.day, single };
       x.seconds += r.seconds; x.episodes.add(r.episodeId); x.months.add(r.day.slice(0, 7));
       shows.set(key, x);
     }
@@ -204,8 +204,14 @@ export function StatsView() {
               <ol className="top-shows">
                 {s.top.map((x, i) => {
                   const badge = x.months.size >= 3 ? t("老朋友") : Date.now() - new Date(`${x.first}T00:00:00`).getTime() < 14 * DAY && !x.single ? t("新欢") : "";
+                  const hasShow = !!x.id && subscribed.some((sub) => sub.id === x.id);
+                  const openTarget = () => {
+                    if (hasShow) go({ kind: "show", id: x.id });
+                    else if (x.single && x.epId) go({ kind: "episode", id: x.epId });
+                  };
+                  const clickable = hasShow || (x.single && !!x.epId);
                   return (
-                    <li key={x.id || x.title} role="button" tabIndex={0} onClick={() => x.id && go({ kind: "show", id: x.id })}>
+                    <li key={x.id || x.epId || x.title} className={clickable ? undefined : "static"} role={clickable ? "button" : undefined} tabIndex={clickable ? 0 : undefined} onClick={clickable ? openTarget : undefined} onKeyDown={clickable ? (e) => e.key === "Enter" && openTarget() : undefined}>
                       <span className="top-rank num">{i + 1}</span>
                       {x.cover ? <img src={x.cover} alt="" loading="lazy" /> : <span className="top-ph" />}
                       <span className="top-name">
@@ -286,12 +292,26 @@ function Topics({ topics }: { topics: Map<string, number> }) {
   const list = [...topics.entries()].sort((a, b) => b[1] - a[1]);
   const total = list.reduce((n, [, v]) => n + v, 0) || 1;
   return (
-    <div className="topic-map">
-      {list.map(([k, v], i) => (
-        <div key={k} className={`topic-tile t${Math.min(i, 5)}`} style={{ flexGrow: v }} title={`${t(k)} · ${span(v)}`}>
-          <span className="topic-name">{t(k)}</span><span className="topic-pct num">{Math.round((v / total) * 100)}%</span>
-        </div>
-      ))}
+    <div className="topic-chart">
+      <div className="topic-bar" role="img" aria-label={t("话题版图")}>
+        {list.map(([k, v], i) => {
+          const pct = (v / total) * 100;
+          return <span key={k} className={`topic-seg t${Math.min(i, 5)}`} style={{ width: `${pct}%` }} title={`${t(k)} · ${Math.round(pct)}% · ${span(v)}`} />;
+        })}
+      </div>
+      <ul className="topic-legend">
+        {list.map(([k, v], i) => {
+          const pct = Math.round((v / total) * 100);
+          return (
+            <li key={k} className="topic-row" title={`${t(k)} · ${span(v)}`}>
+              <span className={`topic-dot t${Math.min(i, 5)}`} aria-hidden />
+              <span className="topic-name">{t(k)}</span>
+              <span className="topic-span muted small num">{span(v)}</span>
+              <span className="topic-pct num">{pct}%</span>
+            </li>
+          );
+        })}
+      </ul>
     </div>
   );
 }
@@ -320,8 +340,19 @@ function Portrait({ rows, range, rangeName }: { rows: ListenRow[]; range: Range;
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [ready, setReady] = useState<boolean | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
   useEffect(() => { void llmReady("chat").then(setReady); }, [settings.chatProvider, settings.chatModel, settings.providers]);
-  useEffect(() => { setText(null); setError(""); void api.getBlob("stats", `portrait-${range}`).then((v) => setText(v || null)); }, [range]);
+  useEffect(() => {
+    abortRef.current?.abort();
+    abortRef.current = null;
+    setBusy(null);
+    setText(null);
+    setError("");
+    let live = true;
+    void api.getBlob("stats", `portrait-${range}`).then((v) => { if (live) setText(v || null); });
+    return () => { live = false; };
+  }, [range]);
+  useEffect(() => () => { abortRef.current?.abort(); }, []);
   const brief = () => {
     const shows = new Map<string, number>(), titles = new Map<string, number>(), hours = Array(24).fill(0) as number[];
     for (const r of rows) { shows.set(r.showTitle || "单集", (shows.get(r.showTitle || "单集") ?? 0) + r.seconds); // i18n-ignore (sent to the model)
@@ -331,18 +362,27 @@ function Portrait({ rows, range, rangeName }: { rows: ListenRow[]; range: Range;
   };
   const run = async () => {
     if (!provider) return;
+    abortRef.current?.abort();
+    const ctl = new AbortController();
+    abortRef.current = ctl;
+    const forRange = range;
     setBusy(""); setError("");
     try {
-      const out = await llmChat({ provider, maxTokens: 4000, onDelta: setBusy, messages: [{ role: "user", content: brief() }],
+      const out = await llmChat({ provider, maxTokens: 4000, signal: ctl.signal, onDelta: (d) => { if (!ctl.signal.aborted) setBusy(d); }, messages: [{ role: "user", content: brief() }],
         system: "你是一位细腻又严谨的播客编辑。根据用户的收听数据写一段中文收听画像，只依据给出的数据，不编造未出现的节目或事实。格式：第一行是一个 4–8 字的称号（加粗）；第二行是 3 个兴趣标签，用「·」分隔；然后一段 80–140 字的画像，有文学感但每句都能在数据里找到依据；最后一行以「下一步：」开头，建议一个他可能喜欢的新方向。不要使用标题符号。" }); // i18n-ignore
+      if (ctl.signal.aborted) return;
       if (!out.trim()) throw new Error(t("模型没有返回内容，请重试或换一个模型"));
-      setText(out); await api.setBlob("stats", `portrait-${range}`, out);
-    } catch (e) { setError(errorText(e)); } finally { setBusy(null); }
+      setText(out); await api.setBlob("stats", `portrait-${forRange}`, out);
+    } catch (e) { if (!ctl.signal.aborted) setError(errorText(e)); } finally { if (abortRef.current === ctl) { abortRef.current = null; setBusy(null); } }
   };
   const shown = busy ?? text;
   return (
     <section className="stats-card portrait">
-      <div className="stats-card-h"><h2><Sparkles size={14} className="accent" /> {t("AI 收听画像")}</h2>{text && busy == null && <button className="link-btn small" onClick={() => void run()}><RefreshCw size={12} /> {t("重新生成")}</button>}</div>
+      <div className="stats-card-h">
+        <h2><Sparkles size={14} className="accent" /> {t("AI 收听画像")}</h2>
+        {busy != null ? <button className="btn ghost sm" onClick={() => abortRef.current?.abort()}><Square size={12} fill="currentColor" /> {t("停止")}</button>
+          : text && <button className="link-btn small" onClick={() => void run()}><RefreshCw size={12} /> {t("重新生成")}</button>}
+      </div>
       {shown ? <div className="portrait-text"><Markdown text={shown} onSeek={() => {}} /></div>
         : ready === false ? <p className="muted small">{t("在设置里配好模型后，可以让 AI 读一读你的收听，写一段只属于你的画像。")} <button className="link-btn small" onClick={() => useStore.getState().openSettings("model")}>{t("去设置")}</button></p>
         : (

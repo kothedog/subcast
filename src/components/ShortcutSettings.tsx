@@ -122,7 +122,7 @@ export function KeysHelp() {
           </section>
         ))}
       </div>
-      <div className="row-actions"><span className="spacer" /><button className="btn ghost sm" onClick={() => { close(); useStore.getState().openSettings("general"); }}>{t("修改快捷键…")}</button></div>
+      <div className="row-actions"><span className="spacer" /><button className="btn ghost sm" onClick={() => { close(); useStore.getState().openSettings("shortcuts"); }}>{t("修改快捷键…")}</button></div>
     </Modal>
   );
 }

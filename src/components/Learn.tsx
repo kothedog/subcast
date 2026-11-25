@@ -128,6 +128,7 @@ export function WordCard({ target, ep, onClose }: { target: CardTarget; ep: Epis
   const aiOn = useStore((s) => s.settings.learnAi);
   const [ctx, setCtx] = useState<string | null>(saved?.ctx ?? null);
   const [ctxState, setCtxState] = useState<"idle" | "loading" | "none" | "error">("idle");
+  const [ctxTry, setCtxTry] = useState(0);
   const box = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState<React.CSSProperties>({ visibility: "hidden" });
 
@@ -137,30 +138,42 @@ export function WordCard({ target, ep, onClose }: { target: CardTarget; ep: Epis
   }, [target.el]);
 
   // Below the word, or above it when there is no room; kept inside the window.
+  const place = useCallback(() => {
+    const r = target.el.getBoundingClientRect();
+    const h = box.current?.offsetHeight ?? 240;
+    const w = 320;
+    const left = Math.min(Math.max(12, r.left - 20), window.innerWidth - w - 12);
+    const below = r.bottom + 8 + h < window.innerHeight - 12;
+    setPos(below ? { left, top: r.bottom + 8 } : { left, top: Math.max(12, r.top - 8 - h) });
+  }, [target.el]);
+
   useEffect(() => {
-    const place = () => {
-      const r = target.el.getBoundingClientRect();
-      const h = box.current?.offsetHeight ?? 240;
-      const w = 320;
-      const left = Math.min(Math.max(12, r.left - 20), window.innerWidth - w - 12);
-      const below = r.bottom + 8 + h < window.innerHeight - 12;
-      setPos(below ? { left, top: r.bottom + 8 } : { left, top: Math.max(12, r.top - 8 - h) });
-    };
     place();
     const ro = new ResizeObserver(place);
     if (box.current) ro.observe(box.current);
     return () => ro.disconnect();
-  }, [target.el, ctxState, ctx]);
+  }, [place, ctxState, ctx]);
 
   useEffect(() => {
     const down = (e: PointerEvent) => { const n = e.target as Node; if (!box.current?.contains(n) && !target.el.contains(n)) onClose(); };
     const key = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-    const scroll = (e: Event) => { if (!box.current?.contains(e.target as Node)) onClose(); };
+    const scroll = (e: Event) => {
+      if (box.current?.contains(e.target as Node)) return;
+      const scroller = e.target instanceof HTMLElement ? e.target : null;
+      // Ignore programmatic auto-scroll (and tiny scroll jitter) while the word is still visible: follow it instead.
+      const autoUntil = Number(scroller?.dataset.autoScrollUntil ?? 0);
+      const r = target.el.getBoundingClientRect();
+      const sr = scroller?.getBoundingClientRect();
+      const visible = !sr || (r.bottom > sr.top + 4 && r.top < sr.bottom - 4);
+      if (autoUntil >= performance.now() && visible) { place(); return; }
+      if (!visible) { onClose(); return; }
+      onClose();
+    };
     document.addEventListener("pointerdown", down, true);
     window.addEventListener("keydown", key);
     window.addEventListener("scroll", scroll, true);
     return () => { document.removeEventListener("pointerdown", down, true); window.removeEventListener("keydown", key); window.removeEventListener("scroll", scroll, true); };
-  }, [onClose, target.el]);
+  }, [onClose, target.el, place]);
 
   // What the word means here, from the default model (cached on the saved word).
   useEffect(() => {
@@ -180,7 +193,7 @@ export function WordCard({ target, ep, onClose }: { target: CardTarget; ep: Epis
       } catch { if (live) setCtxState("error"); }
     })();
     return () => { live = false; };
-  }, [aiOn, target.token, target.seg.text]);
+  }, [aiOn, target.token, target.seg.text, ctxTry]);
 
   const add = () => {
     useWords.getState().add({
@@ -206,7 +219,7 @@ export function WordCard({ target, ep, onClose }: { target: CardTarget; ep: Epis
       {aiOn && ctxState !== "none" && (
         <div className="wc-ctx">
           <span className="wc-ctx-h">{t("在这句里")}</span>
-          {ctx ? ctx : ctxState === "loading" ? <span className="skeleton wc-skel" /> : ctxState === "error" ? <span className="muted">{t("暂时没能解释，稍后再试")}</span> : null}
+          {ctx ? ctx : ctxState === "loading" ? <span className="skeleton wc-skel" /> : ctxState === "error" ? <span className="muted">{t("暂时没能解释，稍后再试")} <button type="button" className="link-btn" onClick={() => setCtxTry((n) => n + 1)}>{t("重试")}</button></span> : null}
         </div>
       )}
       <div className="wc-foot">
@@ -851,7 +864,12 @@ function Review({ queue, onDone }: { queue: Word[]; onDone: () => void }) {
       </EmptyState>
     </div>
   );
-  const blank = w.sentence.replace(wordRe(w.word), " _____ ");
+  const blank = (() => {
+    const r = w.sentence.replace(wordRe(w.word), " _____ ");
+    if (r !== w.sentence) return r;
+    if (w.id && w.id !== w.word) return w.sentence.replace(wordRe(w.id), " _____ ");
+    return r;
+  })();
   return (
     <div className="page review-page">
       <div className="rv-top">
@@ -883,7 +901,7 @@ function Review({ queue, onDone }: { queue: Word[]; onDone: () => void }) {
             <Spell key={`${i}-${w.id}`} w={w} onExit={onDone} onCheck={(r) => { setSpelled(r); setFlipped(true); }} />
           </>}
         </>}
-        <button className="btn sm play rv-listen" onClick={() => void playWord(w, true)}><ClipLabel k={clipKey(w.episodeId, w.start, w.end)} label={t("再听原句")} /><span className="kbd">R</span></button>
+        <button className="btn sm play rv-listen" onClick={() => void playWord(w, true)}><ClipLabel k={clipKey(w.episodeId, w.start, w.end)} label={t("再听原句")} /><span className="kbd">{mode === "spell" && !flipped ? "␣" : "R"}</span></button>
         {flipped ? (
           <div className="rv-rating">
             <p className="rv-rate-q">{t("记得怎么样？选一个，决定下次什么时候再考")}</p>

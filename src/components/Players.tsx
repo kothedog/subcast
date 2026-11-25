@@ -11,6 +11,8 @@ import { BrowserAccess } from "./BrowserAccess";
 import { clock } from "../lib/format";
 import { loadYouTube } from "../lib/youtube";
 import { offerPlayer, useStore, withdrawPlayer } from "../store";
+import { useClipTools } from "../lib/clipTools";
+import { subtitleModeFor, subtitleModePatch } from "../lib/settings";
 import { IS_MAC, t, tr } from "../lib/i18n";
 import { audioSrc, noteCached, useOffline } from "../lib/offline";
 import { alignCurrent, toContent, toPlay } from "../lib/timemap";
@@ -18,6 +20,7 @@ import { useJobs } from "../lib/jobs";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { playNext } from "../lib/library";
 import { markEnded, notePlaybackProgress } from "../lib/watched";
+import { useZh } from "../lib/zh";
 import { SeekHighlights } from "./HighlightViews";
 
 const SAVE_EVERY = 10;
@@ -54,8 +57,54 @@ function markBlocked(videoId?: string) {
   try { localStorage.setItem(BLOCKED_KEY, JSON.stringify([...blockedIds(), videoId].slice(-500))); } catch { /* storage unavailable */ }
 }
 
+// Videos the listener switched to the original audio (YouTube's embedded player picks an AI dub by region or
+// language and has no audio menu here): played through the direct stream, which keeps only the original track.
+const ORIGINAL_KEY = "subcast-yt-original";
+function originalIds(): string[] { try { return JSON.parse(localStorage.getItem(ORIGINAL_KEY) ?? "[]"); } catch { return []; } }
+export const wantsOriginalAudio = (videoId?: string) => !!videoId && originalIds().includes(videoId);
+/** Asks the video on screen to switch to its original audio (SubtitleTune's "换成原声"). */
+export function switchToOriginalAudio(videoId?: string) {
+  if (!videoId) return;
+  if (!wantsOriginalAudio(videoId)) {
+    try { localStorage.setItem(ORIGINAL_KEY, JSON.stringify([...originalIds(), videoId].slice(-500))); } catch { /* storage unavailable */ }
+  }
+  window.dispatchEvent(new CustomEvent("subcast-original-audio", { detail: videoId }));
+}
+
 /** Playback asked for, sound not there yet: the controls show it, and say more if it takes long. */
 export const waiting = (on: boolean) => { const s = useStore.getState(); if (on ? !s.loadingSince : s.loadingSince) s.set({ loadingSince: on ? Date.now() : null }); };
+/** The play/pause button: while playback is still loading it cancels the request (it shows a pause on hover),
+ *  even before a player exists (the direct stream is still being fetched). */
+export function pressPlay() {
+  const s = useStore.getState();
+  if (s.loadingSince && !s.player) { s.set({ loadingSince: null, playWhenReady: null, playing: false }); return; }
+  s.player?.toggle();
+}
+/** The current episode is loading and has been for at least `after` ms (re-renders when that moment comes). */
+/** A click on a video (its poster or picture): this episode's player toggles; before it exists (still loading, or
+ *  another episode holds the controls) the episode is loaded and plays as soon as its player is ready. */
+function toggleVideo(ep: Episode) {
+  const s = useStore.getState();
+  if (s.player && s.player.episodeId === ep.id) { s.player.toggle(); return; }
+  s.load(ep);
+  playSoon(ep.id);
+}
+export function useLoadingFor(id: string | undefined, after = 0): boolean {
+  const since = useStore((s) => (id && s.current?.id === id ? s.loadingSince ?? null : null));
+  const [, tick] = useState(0);
+  useEffect(() => {
+    if (!since || !after) return;
+    const left = since + after - Date.now();
+    if (left <= 0) return;
+    const timer = window.setTimeout(() => tick((n) => n + 1), left + 50);
+    return () => window.clearTimeout(timer);
+  }, [since, after]);
+  return !!since && Date.now() - since >= after;
+}
+/** Spinner that turns into a pause sign on hover: loading, and a click cancels it. */
+export function LoadingIcon({ size }: { size: number }) {
+  return <span className="loading-icon"><Loader2 size={size} className="spin" /><Pause size={size} fill="currentColor" className="loading-cancel" /></span>;
+}
 let lastSaved = 0;
 // Listening time: wall-clock time while playing, at most 2 s per tick (a seek or a sleeping laptop adds
 // nothing), flushed every 20 s and on pause.
@@ -69,7 +118,8 @@ export function noteListening(ep: Episode, playing: boolean) {
   if (heard.id !== ep.id) { flushHeard(); heard = { id: ep.id, show: ep.showId, secs: 0, at: now, translated: false }; }
   if (playing && heard.at) heard.secs += Math.min(2, (now - heard.at) / 1000);
   heard.at = playing ? now : 0;
-  heard.translated ||= useStore.getState().settings.subtitleMode !== "original";
+  const subMode = subtitleModeFor(useStore.getState().settings, ep);
+  heard.translated ||= subMode !== "original" && subMode !== "off";
   if (heard.secs >= 20 || (!playing && heard.secs > 0)) flushHeard();
 }
 
@@ -183,6 +233,24 @@ export function AudioEngine() {
   );
 }
 
+type StreamMode = "native-hls" | "proxy-hls" | "mp4";
+const nativeHls = () => document.createElement("video").canPlayType("application/vnd.apple.mpegurl") !== "";
+/** How long to wait for a video address (yt-dlp, its bot-check retries, the proxy) before trying something else.
+ *  The backend has its own, longer limit; this keeps the player from spinning for minutes. */
+const STREAM_WAIT = 40_000;
+/** How long a direct stream may take to show its first frame's details (its length) before it counts as stuck. */
+const STALL_WAIT = 20_000;
+/** Play loading this long gets a "loading slowly" note with the ways out (audio, YouTube). */
+const SLOW_AFTER = 8_000;
+/** An embedded player asked to play that hasn't started after this long counts as not working here. */
+const EMBED_START_WAIT = 20_000;
+function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = window.setTimeout(() => reject(new Error(t("获取视频地址超时，请检查网络或代理"))), ms);
+    p.then((v) => { window.clearTimeout(timer); resolve(v); }, (e) => { window.clearTimeout(timer); reject(e); });
+  });
+}
+
 /** Our subtitles replace YouTube's: turning the caption module off alone is not enough when the viewer has captions on. */
 function hideYouTubeCaptions(player: any) {
   try { player.setOption?.("captions", "track", {}); } catch { /* module not loaded yet */ }
@@ -195,12 +263,49 @@ export const RATES = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2, 2.5, 3];
  *  outside the frame, under a shield that keeps hover UI from appearing. Our own controls and subtitles drive it.
  *  Videos whose owners forbid embedding fall back to the HLS stream yt-dlp finds, played in a plain <video>. */
 export function YouTubePlayer({ ep, overlay, onUnplayable }: { ep: Episode; overlay?: React.ReactNode; onUnplayable?: () => void }) {
-  const [native, setNative] = useState<{ url: string; kind: "hls" | "mp4" } | null>(null);
+  const [native, setNativeState] = useState<{ url: string; kind: "hls" | "mp4" } | null>(null);
+  /** The direct stream to play. Its length, when yt-dlp gave one, fills a bar that has none yet (feeds without
+   *  a length showed "--:--" and couldn't seek until the video loaded). */
+  const setNative = (stream: { url: string; kind: "hls" | "mp4"; duration?: number | null } | null) => {
+    setNativeState(stream && { url: stream.url, kind: stream.kind });
+    const s = useStore.getState();
+    if (stream?.duration && s.current?.id === ep.id && !s.length) s.set({ length: stream.duration });
+  };
   const [error, setError] = useState<string | null>(null);
   /** What the switch to the direct stream is waiting for; null when not switching. */
   const [fallingBack, setFallingBack] = useState<string | null>(null);
   const box = useRef<HTMLDivElement>(null);
-  const fallback = async (why: string) => {
+  /** The WebView itself can't reach YouTube (the embed's script never loaded): the stream then has to come
+   *  through the app's loopback proxy, which uses SubCast's own network settings. */
+  const viaApp = useRef(false);
+  /** Streams still to try when the one on screen fails: through the proxy, then the MP4. */
+  const plan = useRef<StreamMode[]>([]);
+  /** The stream on screen, and whether it ever loaded (then a failure is more likely an expired address). */
+  const playingMode = useRef<StreamMode | null>(null);
+  const loadedOnce = useRef(false);
+  /** A fresh address was already fetched for an expired one: once is enough, or a flapping network loops forever. */
+  const refreshed = useRef(false);
+  /** Going straight to the direct stream: the owner forbids embedding, the original audio was asked for, or
+   *  nothing could play and the poster waits for a retry. */
+  const [direct, setDirect] = useState(() => wasBlocked(ep.videoId) || wantsOriginalAudio(ep.videoId));
+  /** The fallback running now; a second request (the embed can report the same failure twice) waits for it. */
+  const resolving = useRef(false);
+  const mine = () => useStore.getState().current?.id === ep.id;
+  /** Nothing plays the video: hand over to the audio when there is one, else say what to do. */
+  const giveUp = (why: string, detail: string) => {
+    // The audio takes over with the "play was pressed" state left as it is: it reads it, and starts by itself.
+    if (onUnplayable) { onUnplayable(); return; }
+    // No audio to fall back on: the poster comes back (its play button tries again) under a clear error.
+    if (mine()) { waiting(false); useStore.getState().set({ playing: false }); }
+    setNative(null); setDirect(true);
+    setError(t("{reason}。{detail}", { reason: why, detail }));
+  };
+  const fallback = async (why: string, noRoute = false) => {
+    if (resolving.current) return;
+    resolving.current = true;
+    viaApp.current ||= noRoute;
+    refreshed.current = false;
+    setError(null);
     setFallingBack(t("{reason}，正在改用直连播放…", { reason: why }));
     const off = listen<{ videoId: string; stage: string; progress: number }>("yt-stream", ({ payload: p }) => {
       if (p.videoId !== ep.videoId) return;
@@ -208,43 +313,49 @@ export function YouTubePlayer({ ep, overlay, onUnplayable }: { ep: Episode; over
         ? t("首次使用，正在下载 YouTube 播放组件 {pct}%", { pct: Math.round(p.progress * 100) })
         : t("{reason}，正在获取视频地址…", { reason: why }));
     });
-    // HLS where the WebView plays it (macOS); elsewhere HLS through the app's loopback proxy (hls.js), for HD.
-    const nativeHls = document.createElement("video").canPlayType("application/vnd.apple.mpegurl") !== "";
+    // HLS where the WebView plays it (macOS); elsewhere, or when the WebView has no route to YouTube, HLS through
+    // the app's loopback proxy (hls.js where needed), for HD.
+    const mode: StreamMode = viaApp.current || !nativeHls() ? "proxy-hls" : "native-hls";
     // Play was pressed (or it was playing): the direct stream picks up where the embed left off.
     const wanted = () => { const s = useStore.getState(); return s.current?.id === ep.id && (!!s.loadingSince || s.playWhenReady === ep.id || s.playing); };
     try {
-      const stream = await api.youtubeStream(ep.videoId!, nativeHls ? "native-hls" : "proxy-hls");
+      const stream = await withTimeout(api.youtubeStream(ep.videoId!, mode), STREAM_WAIT);
+      plan.current = mode === "native-hls" ? ["proxy-hls", "mp4"] : mode === "proxy-hls" ? ["mp4"] : [];
+      playingMode.current = mode; loadedOnce.current = false;
       if (wanted()) useStore.getState().set({ playWhenReady: ep.id });
       setNative(stream); setError(null);
     }
     catch (e) {
-      if (useStore.getState().current?.id === ep.id) waiting(false);
       const msg = typeof e === "string" ? e : String((e as any)?.message ?? e);
       // YouTube wants a signed-in browser: ask once, here, instead of failing or silently falling back to audio.
-      if (isBotCheck(msg)) { setBotCheck(why); setBotWhy(browserLocked(msg) ? "locked" : signInExpired(msg) ? "expired" : "ask"); return; }
-      if (needsBrowserAccess(msg)) { setDenied(why); return; }
-      if (onUnplayable) onUnplayable(); else setError(t("{reason}。{detail}", { reason: why, detail: tr(msg) }));
+      if (isBotCheck(msg)) { if (mine()) waiting(false); setBotCheck(why); setBotWhy(browserLocked(msg) ? "locked" : signInExpired(msg) ? "expired" : "ask"); return; }
+      if (needsBrowserAccess(msg)) { if (mine()) waiting(false); setDenied(why); return; }
+      giveUp(why, tr(msg));
     }
-    finally { setFallingBack(null); void off.then((f) => f()); }
+    finally { resolving.current = false; setFallingBack(null); void off.then((f) => f()); }
   };
-  // A saved address can go stale (network changed, YouTube expired it early): ask for a new one once, then try the MP4.
-  const retried = useRef(false);
+  const retry = () => { setError(null); void fallback(t("重新获取视频")); };
+  // The stream on screen failed or never started (expired address, no route from the WebView, HLS unsupported):
+  // everything through the app's proxy, then the MP4; then the audio, or a clear error.
   const fetching = useRef(false);
-  const mine = () => useStore.getState().current?.id === ep.id;
   const failed = () => {
-    // hls.js and the <video> element can both report the same failure.
+    // hls.js, the <video> element and the stall check can all report the same failure.
     if (fetching.current) return;
-    const mode = native?.kind === "hls" && !retried.current ? (document.createElement("video").canPlayType("application/vnd.apple.mpegurl") !== "" ? "native-hls" : "proxy-hls") : "mp4";
-    if (retried.current && native?.kind === "mp4") { if (mine()) waiting(false); return setError(t("视频地址失效，请稍后再试")); }
-    retried.current = true;
+    // It played and then failed: the address has probably expired, so the same kind gets a fresh one first.
+    if (loadedOnce.current && playingMode.current && !refreshed.current) { plan.current.unshift(playingMode.current); refreshed.current = true; }
+    loadedOnce.current = false;
+    const mode = plan.current.shift();
+    if (!mode) return giveUp(t("视频无法播放"), t("可能是网络或代理不通，检查代理设置后重试，或在 YouTube 打开"));
     fetching.current = true;
     // It was playing or about to: the new address carries on by itself.
     const s = useStore.getState();
-    const resume = mine() && (s.playing || !!s.loadingSince);
-    void api.youtubeStream(ep.videoId!, mode, true)
-      .then((stream) => { if (resume) useStore.getState().set({ playWhenReady: ep.id }); setNative(stream); })
-      .catch((e) => { if (mine()) waiting(false); setError(tr(String(e?.message ?? e))); })
-      .finally(() => { fetching.current = false; });
+    const resume = mine() && (s.playing || !!s.loadingSince || s.playWhenReady === ep.id);
+    if (mine()) waiting(true);
+    setFallingBack(t("视频没能播放，正在换一种方式…"));
+    void withTimeout(api.youtubeStream(ep.videoId!, mode, true), STREAM_WAIT).then(
+      (stream) => { fetching.current = false; setFallingBack(null); playingMode.current = mode; if (resume) useStore.getState().set({ playWhenReady: ep.id }); setNative(stream); },
+      // This kind can't be had either: on to the next one (or the audio, or the error).
+      () => { fetching.current = false; setFallingBack(null); failed(); });
   };
   const [botCheck, setBotCheck] = useState<string | null>(null);
   /** Why the check is being shown: never signed in, the browser's sign-in is unreadable, or SubCast's expired. */
@@ -259,10 +370,23 @@ export function YouTubePlayer({ ep, overlay, onUnplayable }: { ep: Episode; over
     await useStore.getState().saveSettings({ ytCookiesBrowser: browser });
     void fallback(why);
   };
-  useEffect(() => { setNative(null); setError(null); setDenied(null); retried.current = false; }, [ep.id]);
+  useEffect(() => { setNative(null); setError(null); setDenied(null); plan.current = []; }, [ep.id]);
   // Known to refuse embedding: skip the embedded player and fetch the direct stream right away.
-  const [direct] = useState(() => wasBlocked(ep.videoId));
-  useEffect(() => { if (direct) void fallback(t("作者限制了嵌入播放")); }, []);
+  // A saved video plays from disk: no YouTube player to load, and it works offline.
+  const [localBroken, setLocalBroken] = useState(false);
+  useEffect(() => setLocalBroken(false), [ep.id]);
+  const saved = useOffline((s) => s.saved[ep.id]?.path);
+  const localVideo = !localBroken && saved && /\.(mp4|m4v|mov|webm)$/i.test(saved) ? saved : undefined;
+  useEffect(() => { if (direct && !localVideo) void fallback(wasBlocked(ep.videoId) ? t("作者限制了嵌入播放") : t("使用原声")); }, []);
+  useEffect(() => {
+    const on = (e: Event) => {
+      if ((e as CustomEvent<string>).detail !== ep.videoId || native || localVideo) return;
+      setDirect(true);
+      void fallback(t("切换到原声"));
+    };
+    window.addEventListener("subcast-original-audio", on);
+    return () => window.removeEventListener("subcast-original-audio", on);
+  }, [ep.videoId, native, localVideo]);
   // Have yt-dlp ready before it is needed: a first fallback would otherwise start with a 35 MB download.
   useEffect(() => { void api.prepareYoutube().catch(() => {}); }, []);
   const watchOnYouTube = () => {
@@ -270,27 +394,37 @@ export function YouTubePlayer({ ep, overlay, onUnplayable }: { ep: Episode; over
     void openUrl(`https://www.youtube.com/watch?v=${ep.videoId}${s > 5 ? `&t=${s}s` : ""}`);
   };
   const openBtn = <button className="link-btn video-open" onClick={watchOnYouTube}><ExternalLink size={13} /> {t("在 YouTube 打开")}</button>;
+  // Play has been loading a while (and nothing else explains it yet): say so, with the ways out.
+  const slow = useLoadingFor(ep.id, SLOW_AFTER);
+  // Waiting on the direct stream need not be the only way out when the episode has its audio.
+  const audioBtn = onUnplayable ? <button className="link-btn video-open" onClick={onUnplayable}>{t("改听音频")}</button> : null;
   const fullscreen = () => toggleTheater();
   const theater = useStore((s) => s.theater);
   // Leaving the episode leaves full screen too.
   useEffect(() => () => { if (useStore.getState().theater) toggleTheater(false); }, []);
-  // In full screen the controls show while the mouse moves and fade after 2.5 s of stillness.
+  // In full screen the controls show while the mouse moves or keys are pressed and fade after 2.5 s of stillness.
   const [idle, setIdle] = useState(false);
+  const titleZh = useZh(ep.title);
   useEffect(() => {
     if (!theater) return;
     let timer = window.setTimeout(() => setIdle(true), 2500);
     const wake = () => { setIdle(false); window.clearTimeout(timer); timer = window.setTimeout(() => setIdle(true), 2500); };
-    const esc = (e: KeyboardEvent) => { if (e.key === "Escape") { e.preventDefault(); toggleTheater(false); } };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") { e.preventDefault(); toggleTheater(false); return; }
+      wake();
+    };
     window.addEventListener("mousemove", wake);
-    window.addEventListener("keydown", esc);
-    return () => { window.clearTimeout(timer); window.removeEventListener("mousemove", wake); window.removeEventListener("keydown", esc); };
+    window.addEventListener("keydown", onKey);
+    return () => { window.clearTimeout(timer); window.removeEventListener("mousemove", wake); window.removeEventListener("keydown", onKey); };
   }, [theater]);
   return (
     <div className={`video ${theater ? "theater" : ""} ${theater && idle ? "idle" : ""}`} ref={box}>
-      {native ? <NativeVideo ep={ep} src={native.url} kind={native.kind} onFullscreen={fullscreen} onFail={failed} />
-        : direct ? <PlayHint ep={ep} show onClick={() => { useStore.getState().load(ep); playSoon(ep.id); }} />
-        : <EmbedVideo ep={ep} onFullscreen={fullscreen} onBlocked={fallback} onError={setError} />}
-      {fallingBack && <div className="video-note"><span className="spin-dot" /> {fallingBack} {openBtn}</div>}
+      {localVideo ? <NativeVideo ep={ep} src={convertFileSrc(localVideo)} kind="mp4" onFullscreen={fullscreen} onFail={() => setLocalBroken(true)} />
+        : native ? <NativeVideo ep={ep} src={native.url} kind={native.kind} onFullscreen={fullscreen} onFail={failed} onLoaded={() => { loadedOnce.current = true; }} />
+        : direct ? <PlayHint ep={ep} show onClick={() => { useStore.getState().load(ep); playSoon(ep.id); if (error) retry(); }} />
+        : <EmbedVideo ep={ep} onFullscreen={fullscreen} onBlocked={(why, noRoute) => void fallback(why, noRoute)} onError={setError} />}
+      {fallingBack ? <div className="video-note"><span className="spin-dot" /> {fallingBack} {audioBtn} {openBtn}</div>
+        : slow && !error && !botCheck && denied == null && <div className="video-note"><span className="spin-dot" /> {t("视频加载较慢…")} {audioBtn} {openBtn}</div>}
       {botCheck && (
         <div className="video-error bot-check">
           <p>{t("YouTube 要求验证「不是机器人」才能播放这个视频。")}</p>
@@ -317,12 +451,21 @@ export function YouTubePlayer({ ep, overlay, onUnplayable }: { ep: Episode; over
           <BrowserAccess browser={browser} onRetry={() => { const why = denied; setDenied(null); void fallback(why); }} />
         </div>
       )}
-      {error && <div className="video-error">{error} {openBtn}</div>}
+      {error && (
+        <div className="video-error">
+          <p>{error}</p>
+          <div className="row-actions">
+            <button className="btn primary sm" onClick={retry}>{t("重试")}</button>
+            <button className="link-btn video-open" onClick={() => useStore.getState().openSettings("network")}>{t("网络诊断")}</button>
+            {openBtn}
+          </div>
+        </div>
+      )}
       {overlay}
       {!theater && <button className="video-fs" title={t("全屏（F）")} aria-label={t("全屏")} onClick={(e) => { e.stopPropagation(); fullscreen(); }}><Maximize2 size={16} /></button>}
       {theater && (
         <div className="theater-bar" onClick={(e) => e.stopPropagation()}>
-          <p className="theater-title clamp1">{ep.title}</p>
+          <p className="theater-title clamp1">{titleZh ?? ep.title}</p>
           <Controls compact />
           <button className="icon-btn theater-exit" title={t("退出全屏（Esc）")} aria-label={t("退出全屏")} onClick={() => toggleTheater(false)}><Minimize2 size={16} /></button>
         </div>
@@ -341,16 +484,19 @@ export function toggleTheater(on?: boolean) {
   void getCurrentWindow().setFullscreen(next).catch(() => {});
 }
 
+/** The poster over a video that hasn't started. While play is loading its button spins (a pause on hover: a click
+ *  cancels), so it doesn't invite pressing play again. */
 function PlayHint({ ep, show, onClick }: { ep: Episode; show: boolean; onClick: () => void }) {
+  const loading = useLoadingFor(ep.id);
   return (
-    <div className={`video-poster ${show ? "on" : ""}`} onClick={onClick}>
+    <div className={`video-poster ${show ? "on" : ""}`} onClick={loading ? pressPlay : onClick} title={loading ? t("正在加载…（点击取消）") : undefined}>
       <img src={`https://i.ytimg.com/vi/${ep.videoId}/maxresdefault.jpg`} onError={(e) => { const i = e.currentTarget; if (!i.dataset.f) { i.dataset.f = "1"; i.src = `https://i.ytimg.com/vi/${ep.videoId}/hqdefault.jpg`; } }} alt="" />
-      <span className="big-play"><Play size={28} fill="currentColor" /></span>
+      <span className={`big-play ${loading ? "loading" : ""}`}>{loading ? <LoadingIcon size={28} /> : <Play size={28} fill="currentColor" />}</span>
     </div>
   );
 }
 
-function EmbedVideo({ ep, onFullscreen, onBlocked, onError }: { ep: Episode; onFullscreen: () => void; onBlocked: (why: string) => void; onError: (m: string) => void }) {
+function EmbedVideo({ ep, onFullscreen, onBlocked, onError }: { ep: Episode; onFullscreen: () => void; onBlocked: (why: string, noRoute?: boolean) => void; onError: (m: string) => void }) {
   const host = useRef<HTMLDivElement>(null);
   const rate = useStore((s) => s.settings.playbackRate);
   const playerRef = useRef<any>(null);
@@ -358,7 +504,25 @@ function EmbedVideo({ ep, onFullscreen, onBlocked, onError }: { ep: Episode; onF
 
   useEffect(() => {
     let player: any, timer: number | undefined, disposed = false, handle: any, offVolume: (() => void) | undefined;
+    /** Set while a play request waits for the player to start; it gives up and falls back if it never does. */
+    let startCheck: number | undefined;
+    /** The video has started at least once: before that its clock says 0, which is not where the listener is. */
+    let started = false;
     const mine = () => useStore.getState().current?.id === ep.id;
+    const requestPlay = () => {
+      waiting(true);
+      player.playVideo();
+      window.clearTimeout(startCheck);
+      // Some setups load the embed but never play it (no route to YouTube's video servers, a blocked iframe):
+      // a play button that only spins is worse than the direct stream.
+      startCheck = window.setTimeout(() => {
+        const st = player.getPlayerState?.();
+        if (disposed || st === 1 || st === 2 || !mine() || !useStore.getState().loadingSince) return;
+        // It loaded but can't play: YouTube's video servers are out of the WebView's reach, so the direct stream
+        // should come through the app too.
+        onBlocked(t("YouTube 播放器没有响应"), true);
+      }, EMBED_START_WAIT);
+    };
     loadYouTube().then((YT) => {
       if (disposed || !host.current) return;
       const mount = document.createElement("div");
@@ -376,9 +540,19 @@ function EmbedVideo({ ep, onFullscreen, onBlocked, onError }: { ep: Episode; onF
             player.setPlaybackRate?.(useStore.getState().settings.playbackRate);
             handle = {
               episodeId: ep.id,
-              seek: (t: number) => { player.seekTo(t, true); player.playVideo(); },
-              toggle: () => (player.getPlayerState() === 1 ? player.pauseVideo() : (waiting(true), player.playVideo())),
-              play: () => { waiting(true); player.playVideo(); },
+              seek: (t: number) => { player.seekTo(t, true); if (player.getPlayerState?.() !== 1) requestPlay(); },
+              // Buffering or still starting counts as playing: pressing the button then must pause, not ask
+              // to play again (which made pause look dead while the video loaded or an ad ran).
+              toggle: () => {
+                const st = player.getPlayerState?.();
+                if (st === 1 || st === 3 || useStore.getState().loadingSince) {
+                  window.clearTimeout(startCheck);
+                  player.pauseVideo();
+                  waiting(false);
+                  useStore.getState().set({ playing: false });
+                } else requestPlay();
+              },
+              play: () => requestPlay(),
               setRate: (r: number) => player.setPlaybackRate(r),
               // YouTube's embedded player goes no faster than 2×.
               maxRate: 2,
@@ -389,11 +563,13 @@ function EmbedVideo({ ep, onFullscreen, onBlocked, onError }: { ep: Episode; onF
             offVolume = useVolume.subscribe(applyVolume);
             timer = window.setInterval(() => {
               const t = player.getCurrentTime?.();
-              if (typeof t === "number") track(ep, t, player.getDuration?.());
+              if (typeof t === "number" && started) track(ep, t, player.getDuration?.());
             }, 250);
           },
           onStateChange: (e: any) => {
             setState(e.data);
+            if (e.data === 1 || e.data === 2 || e.data === 3) started = true;
+            if (e.data === 1 || e.data === 2) window.clearTimeout(startCheck);
             // Another episode is current (this page was opened while it plays): leave its state alone.
             if (!mine()) return;
             // 3 = buffering; -1/5 after a play request = still starting. 1 = playing.
@@ -416,18 +592,19 @@ function EmbedVideo({ ep, onFullscreen, onBlocked, onError }: { ep: Episode; onF
         },
       });
     // The embedded player can't load (often no route to youtube.com): the direct stream may still work.
-    }).catch((e) => { if (!disposed) onBlocked(tr(String(e.message ?? e))); });
+    }).catch((e) => { if (!disposed) onBlocked(tr(String(e.message ?? e)), true); });
     return () => {
       disposed = true;
+      window.clearTimeout(startCheck);
       offVolume?.();
       window.clearInterval(timer);
-      try { void api.setProgress(ep.id, player?.getCurrentTime?.() ?? 0); player?.destroy?.(); } catch { /* already gone */ }
+      try { if (started) void api.setProgress(ep.id, player?.getCurrentTime?.() ?? 0); player?.destroy?.(); } catch { /* already gone */ }
       if (handle) withdrawPlayer(handle);
     };
   }, [ep.id]);
 
   useEffect(() => { playerRef.current?.setPlaybackRate?.(rate); }, [rate]);
-  const toggle = () => useStore.getState().player?.toggle();
+  const toggle = () => toggleVideo(ep);
   return (
     <>
       <div className="video-host crop" ref={host} />
@@ -439,10 +616,11 @@ function EmbedVideo({ ep, onFullscreen, onBlocked, onError }: { ep: Episode; onF
 }
 
 /** `onFail`: the stream can't be played (stale address, or HLS unsupported here); the caller gets another. */
-function NativeVideo({ ep, src, kind, onFullscreen, onFail }: { ep: Episode; src: string; kind: "hls" | "mp4"; onFullscreen: () => void; onFail?: () => void }) {
+function NativeVideo({ ep, src, kind, onFullscreen, onFail, onLoaded }: { ep: Episode; src: string; kind: "hls" | "mp4"; onFullscreen: () => void; onFail?: () => void; onLoaded?: () => void }) {
   const ref = useRef<HTMLVideoElement>(null);
   const rate = useStore((s) => s.settings.playbackRate);
   const [started, setStarted] = useState(false);
+  const [paused, setPaused] = useState(false);
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
@@ -466,8 +644,11 @@ function NativeVideo({ ep, src, kind, onFullscreen, onFail }: { ep: Episode; src
     };
     offerPlayer(handle);
     const offVolume = followVolume(el);
+    // A stream the WebView can't reach doesn't always fail: it can just never load (length stays "--:--").
+    const stall = window.setTimeout(() => { if (!dead && el.readyState === 0) onFail?.(); }, STALL_WAIT);
     return () => {
       dead = true;
+      window.clearTimeout(stall);
       offVolume();
       hls?.destroy?.();
       if (el.currentTime > 0) void api.setProgress(ep.id, el.currentTime);
@@ -487,20 +668,23 @@ function NativeVideo({ ep, src, kind, onFullscreen, onFail }: { ep: Episode; src
           const at = s.current?.id === ep.id ? s.time : ep.progress;
           if (at > 5 && at < el.duration - 10) el.currentTime = at;
           track(ep, el.currentTime, el.duration);
+          onLoaded?.();
         }}
         onTimeUpdate={(e) => track(ep, e.currentTarget.currentTime)}
-        onPlay={(e) => { setStarted(true); useStore.getState().set({ playing: true }); if (e.currentTarget.readyState < 3) waiting(true); }}
+        onPlay={(e) => { setStarted(true); setPaused(false); useStore.getState().set({ playing: true }); if (e.currentTarget.readyState < 3) waiting(true); }}
         onWaiting={() => waiting(true)}
-        onPlaying={() => waiting(false)}
-        onPause={(e) => { waiting(false); useStore.getState().set({ playing: false }); void api.setProgress(ep.id, e.currentTarget.currentTime); notePlaybackProgress(ep, e.currentTarget.currentTime, e.currentTarget.duration || ep.duration); }}
-        onEnded={(e) => { markEnded(ep, e.currentTarget.duration); playNext(); }} />
-      <div className="video-shield" onClick={() => useStore.getState().player?.toggle()} onDoubleClick={onFullscreen} />
-      <PlayHint ep={ep} show={!started} onClick={() => useStore.getState().player?.toggle()} />
+        onPlaying={() => { setPaused(false); waiting(false); }}
+        onPause={(e) => { setPaused(true); waiting(false); useStore.getState().set({ playing: false }); void api.setProgress(ep.id, e.currentTarget.currentTime); notePlaybackProgress(ep, e.currentTarget.currentTime, e.currentTarget.duration || ep.duration); }}
+        onEnded={(e) => { setPaused(false); markEnded(ep, e.currentTarget.duration); playNext(); }} />
+      <div className="video-shield" onClick={() => toggleVideo(ep)} onDoubleClick={onFullscreen} />
+      <PlayHint ep={ep} show={!started} onClick={() => toggleVideo(ep)} />
+      {started && paused && <span className="paused-mark" onClick={() => toggleVideo(ep)}><Play size={22} fill="currentColor" /></span>}
     </>
   );
 }
 
 export function Controls({ compact = false, video = false }: { compact?: boolean; video?: boolean }) {
+  const clipTools = useClipTools();
   // Whole seconds: the clock and bar move once a second instead of re-rendering on every time update.
   // The bar and clock follow the player's own clock (`rawTime`), which can differ from subtitle time.
   const { currentId, time, length, playing, player, playbackRate, skipBack, skipForward, loadingSince } = useStore(useShallow((s) => ({
@@ -535,8 +719,8 @@ export function Controls({ compact = false, video = false }: { compact?: boolean
         <RotateCcw size={18} />
         <span className="skip-num">{skipBack}</span>
       </button>
-      <button className={`play-btn ${loadingSince ? "loading" : ""}`} title={loadingSince ? t("正在加载…") : playing ? t("暂停（空格）") : t("播放（空格）")} onClick={() => player?.toggle()} disabled={!player} aria-busy={!!loadingSince}>
-        {loadingSince ? <Loader2 size={20} className="spin" /> : playing ? <Pause size={20} fill="currentColor" /> : <Play size={20} fill="currentColor" />}
+      <button className={`play-btn ${loadingSince ? "loading" : ""}`} title={loadingSince ? t("正在加载…（点击取消）") : playing ? t("暂停（空格）") : t("播放（空格）")} onClick={pressPlay} disabled={!player && !loadingSince} aria-busy={!!loadingSince}>
+        {loadingSince ? <LoadingIcon size={20} /> : playing ? <Pause size={20} fill="currentColor" /> : <Play size={20} fill="currentColor" />}
       </button>
       <button className="icon-btn skip-btn" title={t("前进 {n} 秒（→）", { n: skipForward })} aria-label={t("前进 {n} 秒", { n: skipForward })} onClick={() => player?.seek(sub() + skipForward)} disabled={!player}>
         <RotateCw size={18} />
@@ -549,7 +733,7 @@ export function Controls({ compact = false, video = false }: { compact?: boolean
         onMouseMove={(e) => updateHover(e.clientX)}
         onMouseLeave={() => setHover(null)}
       >
-        {!compact && <SeekHighlights episodeId={currentId} length={length} onSeek={(sec) => player?.seek(sec)} />}
+        {!compact && clipTools && <SeekHighlights episodeId={currentId} length={length} onSeek={(sec) => player?.seek(sec)} />}
         {tip && length > 0 && (
           <span className="seek-tip" style={{ left: `clamp(24px, ${tip.pct}%, calc(100% - 24px))` }} aria-hidden>
             {clock(tip.time)}
@@ -564,6 +748,8 @@ export function Controls({ compact = false, video = false }: { compact?: boolean
           value={Math.min(shown, length || shown)}
           onChange={(e) => setDrag(Number(e.target.value))}
           onPointerUp={() => { if (drag != null) { seekBar(drag); setDrag(null); } }}
+          onPointerCancel={() => setDrag(null)}
+          onBlur={() => setDrag(null)}
           onKeyUp={() => { if (drag != null) { seekBar(drag); setDrag(null); } }}
           style={{ "--fill": `${length ? (shown / length) * 100 : 0}%` } as React.CSSProperties}
           aria-label={t("播放进度")}
@@ -572,7 +758,7 @@ export function Controls({ compact = false, video = false }: { compact?: boolean
       <span className="time">{length ? clock(length) : "--:--"}</span>
       <VolumeControl />
       <RateMenu rate={playbackRate} max={player?.maxRate} />
-      {!compact && video && <button className="icon-btn" title={t("全屏（F）")} aria-label={t("全屏")} onClick={() => toggleTheater(true)}><Maximize2 size={17} /></button>}
+      {!compact && video && <button className="icon-btn fs-btn" title={t("全屏（F）")} aria-label={t("全屏")} onClick={() => toggleTheater(true)}><Maximize2 size={17} /></button>}
     </div>
   );
 }
@@ -616,7 +802,7 @@ function setRate(r: number) {
   void saveSettings({ playbackRate: r });
 }
 
-/** Speaker button (click mutes) with a slider that opens on hover or keyboard focus; the wheel over it adjusts. */
+/** Speaker button (click mutes) with a floating slider above it on hover or keyboard focus so the seek bar never shifts. */
 function VolumeControl() {
   const { level, muted } = useVolume(useShallow((s) => ({ level: s.level, muted: s.muted })));
   const shown = muted ? 0 : level;
@@ -625,18 +811,25 @@ function VolumeControl() {
   return (
     <div className="volume" onWheel={(e) => { if (e.deltaY) setLevel(shown - Math.sign(e.deltaY) * 0.05); }}>
       <button className="icon-btn" onClick={() => toggleMute()} title={muted ? t("取消静音（M）") : t("静音（M）")} aria-label={muted ? t("取消静音") : t("静音")}><Icon size={17} /></button>
-      <input className="seek volume-slider" type="range" min={0} max={1} step={0.01} value={shown}
-        onChange={(e) => setLevel(Number(e.target.value))}
-        style={{ "--fill": `${pct}%` } as React.CSSProperties}
-        aria-label={t("音量")} aria-valuetext={`${pct}%`} title={`${t("音量")} ${pct}%`} />
+      <div className="volume-pop">
+        <input className="seek volume-slider" type="range" min={0} max={1} step={0.01} value={shown}
+          onChange={(e) => setLevel(Number(e.target.value))}
+          style={{ "--fill": `${pct}%` } as React.CSSProperties}
+          aria-label={t("音量")} aria-valuetext={`${pct}%`} title={`${t("音量")} ${pct}%`} />
+        <span className="num small muted volume-pct">{pct}%</span>
+      </div>
     </div>
   );
 }
 
 export function cycleMode() {
-  const { settings, saveSettings } = useStore.getState();
-  const order = ["bilingual", "translation", "original"] as const;
-  void saveSettings({ subtitleMode: order[(order.indexOf(settings.subtitleMode) + 1) % 3] });
+  const { settings, saveSettings, current, notify } = useStore.getState();
+  const order = ["bilingual", "translation", "original", "off"] as const;
+  const cur = subtitleModeFor(settings, current);
+  const next = order[(order.indexOf(cur) + 1) % order.length];
+  void saveSettings(subtitleModePatch(settings, current, next));
+  const label = next === "bilingual" ? t("双语") : next === "translation" ? t("中文") : next === "original" ? t("原文") : t("已关闭");
+  notify(t("字幕：{mode}", { mode: label }));
 }
 
 /** Steps the speed up or down one notch (for shortcuts). */

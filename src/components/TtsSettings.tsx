@@ -427,13 +427,11 @@ export function TtsSettings() {
     void saveSettings(patch, quiet);
   };
 
-  /** Melo / Kokoro become the active engine; picking one also downloads it when it is missing. */
+  /** Select Melo / Kokoro to inspect voices or use once downloaded; download stays on the explicit button. */
   const pickLocal = (engine: "local" | "system", model?: LocalModelId) => {
-    const st = useLocalTts.getState();
     if (engine === "local" && model) {
       const local = settings.ttsServices.local;
       void saveSettings({ ttsEngine: "local", ttsServices: { ...settings.ttsServices, local: { ...local, model } } });
-      if (st.status?.supported && !localInstalled(st.status, model) && !st.downloading) void installLocalTts(model);
     } else {
       void saveSettings({ ttsEngine: engine });
     }

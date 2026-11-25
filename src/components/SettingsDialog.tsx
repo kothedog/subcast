@@ -3,7 +3,7 @@ import { sizeMb } from "../lib/format";
 import { ask } from "../lib/confirm";
 import { useShallow } from "zustand/react/shallow";
 import { useEffect, useState } from "react";
-import { BookOpen, Check, ChevronDown, Cloud, Cpu, ExternalLink, FolderOpen, Github, Loader2, MessageCircle, RefreshCw, Trash2, Volume2, X, Captions, HardDrive, Info, Keyboard, SlidersHorizontal, Sparkles, GraduationCap, type LucideIcon } from "lucide-react";
+import { BookOpen, Check, ChevronDown, Cloud, Cpu, ExternalLink, FolderOpen, Github, Loader2, MessageCircle, RefreshCw, Terminal, Trash2, Volume2, X, Captions, HardDrive, Info, Keyboard, SlidersHorizontal, Sparkles, GraduationCap, type LucideIcon } from "lucide-react";
 import { getVersion } from "@tauri-apps/api/app";
 import { ASR_SERVICES, CLOUD_ASR_MAIN } from "../lib/settings";
 import { stopSpeaking } from "../lib/tts";
@@ -11,13 +11,16 @@ import logoUrl from "../assets/logo.png";
 import wechatQr from "../assets/about-wechat-qr.jpg";
 import rewardQr from "../assets/about-reward-qr.png";
 import { openUrl, revealItemInDir } from "@tauri-apps/plugin-opener";
-import { api, errorText, llmChat, type CloudAsr, type ModelInfo, type Provider } from "../lib/api";
+import { api, errorText, llmChat, type CliStatus, type CloudAsr, type ModelInfo, type Provider } from "../lib/api";
 import { useStore } from "../store";
+import { useClipTools } from "../lib/clipTools";
+import { AgentConnectSettings } from "./AgentConnect";
+import { NetworkCheck } from "./NetworkCheck";
 import { bytes, clearAudioCache, clearDownloads, useOffline } from "../lib/offline";
 import { HomeShowCard } from "./YtPromo";
 import { YouTubeAccount } from "./YouTubeAccount";
 import { useModelDownload } from "./TranscriptPanel";
-import { LANGS, systemLang, t, tk, tr, type LangSetting, IS_MAC, kbd } from "../lib/i18n";
+import { LANGS, systemLang, t, tk, tr, type LangSetting, IS_MAC, kbd, isChineseUi } from "../lib/i18n";
 import { ModelSettings } from "./ModelSettings";
 import { ShortcutSettings } from "./ShortcutSettings";
 import { ReadingSettings } from "./ReadingSettings";
@@ -54,7 +57,7 @@ function DeepSeekEverywhere() {
   );
 }
 
-function ProviderEditor({ p, onChange }: { p: Provider; onChange: (p: Provider) => void }) {
+function ProviderEditor({ p, onChange, onKeyChange }: { p: Provider; onChange: (p: Provider) => void; onKeyChange?: () => void }) {
   const settings = useStore((s) => s.settings);
   const [key, setKey] = useState("");
   const [hasKey, setHasKey] = useState(false);
@@ -69,7 +72,7 @@ function ProviderEditor({ p, onChange }: { p: Provider; onChange: (p: Provider) 
     try { if (key.trim()) await saveKey(); const ids = await api.listModels(p); setLive(ids); if (!ids.length) setTesting(t("这个服务没有返回模型列表，请手动填写")); }
     catch (e) { setTesting(errorText(e)); } finally { setFetching(false); }
   };
-  const saveKey = async () => { await api.setApiKey(p.id, key); setHasKey(!!key.trim()); setKey(""); };
+  const saveKey = async () => { await api.setApiKey(p.id, key); setHasKey(!!key.trim()); setKey(""); onKeyChange?.(); };
   const test = async () => {
     setTesting("…"); setTestOk(false);
     try {
@@ -87,7 +90,7 @@ function ProviderEditor({ p, onChange }: { p: Provider; onChange: (p: Provider) 
             <p className="setup-title">API Key</p>
             {p.keyUrl && <button className="link-btn" onClick={() => openUrl(p.keyUrl!)}>{t("去官网申请")} <ExternalLink size={11} /></button>}
           </div>
-          <KeyRow key={p.id} has={hasKey} value={key} onValue={setKey} onSave={saveKey} onDelete={async () => { await api.setApiKey(p.id, ""); setHasKey(false); }} />
+          <KeyRow key={p.id} has={hasKey} value={key} onValue={setKey} onSave={saveKey} onDelete={async () => { await api.setApiKey(p.id, ""); setHasKey(false); onKeyChange?.(); }} />
         </div>
       )}
       <div className="setup-block">
@@ -131,13 +134,27 @@ export function SettingsView() {
   const { settings, saveSettings, set, notify, settingsSection, settingsNonce } = useStore(useShallow((s) => ({ settings: s.settings, saveSettings: s.saveSettings, set: s.set, notify: s.notify, settingsSection: s.settingsSection, settingsNonce: s.settingsNonce })));
   type Section = "subtitles" | "ai" | "tts" | "general" | "learn" | "about";
   // Old section names (links from elsewhere in the app) land in their new home.
-  const LEGACY: Record<string, Section> = { overview: "subtitles", reading: "subtitles", asr: "subtitles", model: "ai", tts: "tts", shortcuts: "general", storage: "general", general: "general", about: "about", subtitles: "subtitles", ai: "ai", learn: "learn" };
+  const LEGACY: Record<string, Section> = { overview: "subtitles", reading: "subtitles", asr: "subtitles", model: "ai", tts: "tts", shortcuts: "general", storage: "general", agents: "general", network: "general", general: "general", about: "about", subtitles: "subtitles", ai: "ai", learn: "learn" };
   const [section, setSection] = useState<Section>(LEGACY[settingsSection ?? "subtitles"] ?? "subtitles");
   // Asked for a section while the page is already open (a "去设置" link): go there.
-  useEffect(() => { if (settingsSection) setSection(LEGACY[settingsSection] ?? "subtitles"); }, [settingsNonce]);
+  useEffect(() => {
+    if (settingsSection) setSection(LEGACY[settingsSection] ?? "subtitles");
+    if (settingsSection === "agents") window.setTimeout(() => document.getElementById("agent-connect")?.scrollIntoView({ behavior: "smooth", block: "start" }), 80);
+    if (settingsSection === "network") window.setTimeout(() => document.getElementById("network")?.scrollIntoView({ behavior: "smooth", block: "center" }), 80);
+    if (settingsSection === "shortcuts") {
+      setShowKeys(true);
+      window.setTimeout(() => document.getElementById("shortcuts-section")?.scrollIntoView({ behavior: "smooth", block: "start" }), 80);
+    }
+    if (settingsSection === "storage") {
+      setShowStorage(true);
+      window.setTimeout(() => document.getElementById("storage-section")?.scrollIntoView({ behavior: "smooth", block: "start" }), 80);
+    }
+  }, [settingsNonce]);
   useEffect(() => () => stopSpeaking(), []);
   const [models, setModels] = useState<ModelInfo[]>([]);
   const [proxy, setProxy] = useState(settings.proxy);
+  const [storageRev, setStorageRev] = useState(0);
+  useEffect(() => { setProxy(settings.proxy); }, [settings.proxy]);
   const [elsewhere, setElsewhere] = useState<{ app: string; format: string }[]>([]);
   const refresh = () => api.asrModels().then((m) => { setModels(m); void api.asrElsewhere().then((x) => setElsewhere(x ?? [])).catch(() => {}); });
   const { downloading, start, cancel } = useModelDownload(refresh);
@@ -147,10 +164,11 @@ export function SettingsView() {
   const [moreCloud, setMoreCloud] = useState(false);
   const [showKeys, setShowKeys] = useState(false);
   const [showStorage, setShowStorage] = useState(false);
+  const [showCli, setShowCli] = useState(false);
   const NAV: [Section, string, LucideIcon][] = [["subtitles", tk("字幕"), Captions], ["ai", tk("AI"), Sparkles], ["tts", tk("朗读"), Volume2], ["general", tk("通用"), SlidersHorizontal], ["learn", tk("学英语"), GraduationCap], ["about", tk("关于"), Info]];
   const modelRow = (m: ModelInfo) => (
     <div key={m.id} className={`model-item ${settings.asrEngine === "local" && settings.asrModel === m.id ? "on" : ""}`}>
-      <div role="button" tabIndex={0} className="model-pick" onClick={() => saveSettings({ asrEngine: "local", asrModel: m.id })}>
+      <div role="button" tabIndex={0} className="model-pick" onClick={() => saveSettings({ asrEngine: "local", asrModel: m.id })} onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), saveSettings({ asrEngine: "local", asrModel: m.id }))}>
         <span className={`radio ${settings.asrEngine === "local" && settings.asrModel === m.id ? "on" : ""}`} />
         <div><p>{tr(m.name)}</p><p className="muted small">{m.id.startsWith("file:") ? sizeMb(m.sizeMb) : [tr(m.note), sizeMb(m.sizeMb)].filter(Boolean).join(" · ")}</p></div>
       </div>
@@ -159,7 +177,10 @@ export function SettingsView() {
       ) : m.installed && m.from ? (
         <div className="dl"><span className="from-tag small">{t("来自 {app}", { app: tr(m.from) })}</span><button className="icon-btn" title={t("不再使用（原文件保留）")} onClick={async () => { await api.deleteModel(m.id); void refresh(); }}><X size={14} /></button></div>
       ) : m.installed ? (
-        <div className="dl"><span className="ok-text small"><Check size={13} /> {t("已下载")}</span><button className="icon-btn" title={t("删除模型")} onClick={async () => { await api.deleteModel(m.id); void refresh(); }}><Trash2 size={14} /></button></div>
+        <div className="dl"><span className="ok-text small"><Check size={13} /> {t("已下载")}</span><button className="icon-btn" title={t("删除模型")} onClick={async () => {
+          if (!(await ask({ title: t("删除模型") + `「${tr(m.name)}」？`, message: sizeMb(m.sizeMb), ok: t("删除"), danger: true }))) return;
+          await api.deleteModel(m.id); setStorageRev((n) => n + 1); void refresh();
+        }}><Trash2 size={14} /></button></div>
       ) : (
         <button className="btn sm" onClick={() => start(m.id)} disabled={downloading != null}>{t("下载")}</button>
       )}
@@ -228,8 +249,14 @@ export function SettingsView() {
                 </label>
                 <label className="check"><input type="checkbox" checked={settings.youtubePromo} onChange={(e) => saveSettings({ youtubePromo: e.target.checked })} /> {t("显示节目的 YouTube 订阅按钮")}</label>
                 {settings.youtubePromo && <label className="check"><input type="checkbox" checked={!settings.homeBannerHidden} onChange={(e) => saveSettings({ homeBannerHidden: !e.target.checked })} /> {t("在发现页顶部推荐「词元之外」")}</label>}
+                <ClipToolsToggle />
                 <label className="check"><input type="checkbox" checked={settings.sideCurated} onChange={(e) => saveSettings({ sideCurated: e.target.checked })} /> {t("在侧栏显示「乔木精读」推荐")}</label>
-                <label className="check"><input type="checkbox" checked={settings.translateShowNames} onChange={(e) => saveSettings({ translateShowNames: e.target.checked })} /> {t("翻译订阅节目的名字")}</label>
+                {isChineseUi() && (
+                  <>
+                    <label className="check"><input type="checkbox" checked={!settings.translateShowNames} onChange={(e) => saveSettings({ translateShowNames: !e.target.checked })} /> {t("外文节目名不翻译")}</label>
+                    <p className="muted small check-note">{t("侧栏和订阅列表保留原名，如 Lenny's Podcast。自己改过的名字不受影响。")}</p>
+                  </>
+                )}
               </section>
               <section className="setup-block">
                 <p className="setup-title">{t("订阅")}</p>
@@ -243,9 +270,10 @@ export function SettingsView() {
                 <label><span>{t("代理")}</span>
                   <div className="key-row">
                     <input {...NO_AUTO} value={proxy} onChange={(e) => setProxy(e.target.value)} placeholder={t("留空就用系统代理")} />
-                    <button className="btn sm" onClick={async () => { try { await saveSettings({ proxy }); notify(t("代理已保存")); } catch (e) { notify(errorText(e)); } }}>{t("保存")}</button>
+                    <button className="btn sm" onClick={async () => { try { const changed = proxy.trim() !== (settings.proxy ?? "").trim(); await saveSettings({ proxy }); notify(changed ? t("代理已保存。视频播放器重启 SubCast 后使用新代理") : t("代理已保存")); } catch (e) { notify(errorText(e)); } }}>{t("保存")}</button>
                   </div>
                 </label>
+                <NetworkCheck />
                 <YouTubeAccount />
                 <label><span>{t("YouTube 要求验证时")}</span>
                   <select value={settings.ytCookiesBrowser ?? ""} onChange={(e) => void saveSettings({ ytCookiesBrowser: e.target.value })}>
@@ -254,16 +282,22 @@ export function SettingsView() {
                   </select>
                 </label>
               </section>
+              <section className="setup-block" id="agent-connect">
+                <p className="setup-title">{t("让 AI 助手调用 SubCast")}</p>
+                <AgentConnectSettings />
+              </section>
               <section className="setup-block">
                 <p className="setup-title">{t("共享")}</p>
                 <label className="check"><input type="checkbox" checked={settings.shareTranscripts} onChange={(e) => saveSettings({ shareTranscripts: e.target.checked })} /> {t("匿名分享我生成的字幕、译文和导读")}</label>
                 <p className="muted small">{t("只分享文字，帮别人省去等待。关掉后照样能用别人分享的。")}</p>
               </section>
               <section className="setup-block">
-                <button className="setting-row" aria-expanded={showKeys} onClick={() => setShowKeys(!showKeys)}><Keyboard size={15} /> <span>{t("快捷键")}</span><span className="muted small">{t("{key} 随时查看", { key: kbd("⌘/") })}</span><ChevronDown size={14} className={showKeys ? "flip" : ""} /></button>
+                <button id="shortcuts-section" className="setting-row" aria-expanded={showKeys} onClick={() => setShowKeys(!showKeys)}><Keyboard size={15} /> <span>{t("快捷键")}</span><span className="muted small">{t("{key} 随时查看", { key: kbd("⌘/") })}</span><ChevronDown size={14} className={showKeys ? "flip" : ""} /></button>
                 {showKeys && <ShortcutSettings />}
-                <button className="setting-row" aria-expanded={showStorage} onClick={() => setShowStorage(!showStorage)}><HardDrive size={15} /> <span>{t("存储")}</span><StorageTotal /><ChevronDown size={14} className={showStorage ? "flip" : ""} /></button>
-                {showStorage && <Storage onAsr={() => setSection("subtitles")} />}
+                <button id="storage-section" className="setting-row" aria-expanded={showStorage} onClick={() => setShowStorage(!showStorage)}><HardDrive size={15} /> <span>{t("存储")}</span><StorageTotal rev={storageRev} /><ChevronDown size={14} className={showStorage ? "flip" : ""} /></button>
+                {showStorage && <Storage onAsr={() => setSection("subtitles")} onTts={() => setSection("tts")} onChanged={() => setStorageRev((n) => n + 1)} />}
+                <button className="setting-row" aria-expanded={showCli} onClick={() => setShowCli(!showCli)}><Terminal size={15} /> <span>{t("命令行工具（CLI）")}</span><span className="muted small">subcast</span><ChevronDown size={14} className={showCli ? "flip" : ""} /></button>
+                {showCli && <CliSettings />}
               </section>
             </>
           )}
@@ -321,6 +355,18 @@ function UpdateStatus() {
 
 const REPO = "https://github.com/joeseesun/subcast";
 /** "占用 1.9 GB" for the 通用 page's storage row. */
+/** Highlights and clip-making: on for people who make clips, out of the way for the rest. */
+function ClipToolsToggle() {
+  const on = useClipTools();
+  const saveSettings = useStore((s) => s.saveSettings);
+  return (
+    <>
+      <label className="check"><input type="checkbox" checked={on} onChange={(e) => void saveSettings({ clipTools: e.target.checked })} /> {t("显示高光与剪视频功能")}</label>
+      <p className="muted small check-note">{t("字幕旁的「高光」、进度条上的高光标记、选中文字和 AI 回答里的「剪视频」。")}</p>
+    </>
+  );
+}
+
 /** Where highlight clips are saved: the Downloads folder unless the user picks another. */
 function ClipExportRow() {
   const { dir, saveSettings } = useStore(useShallow((s) => ({ dir: s.settings.clipExportDir ?? "", saveSettings: s.saveSettings })));
@@ -341,23 +387,26 @@ function ClipExportRow() {
   );
 }
 
-function StorageTotal() {
+function StorageTotal({ rev }: { rev: number }) {
+  const saved = useOffline((s) => s.saved);
   const [total, setTotal] = useState<number | null>(null);
-  useEffect(() => { void api.storageInfo().then((i) => setTotal(i.downloads + i.models + i.library + i.temp + (i.audioCache ?? 0) + (i.ttsCache ?? 0) + (i.ttsModels ?? 0))).catch(() => {}); }, []);
+  useEffect(() => { void api.storageInfo().then((i) => setTotal(i.downloads + i.models + i.library + i.temp + (i.audioCache ?? 0) + (i.ttsCache ?? 0) + (i.ttsModels ?? 0))).catch(() => {}); }, [rev, saved]);
   return <span className="muted small">{total == null ? "" : t("占用 {size}", { size: bytes(total) })}</span>;
 }
 
-function Storage({ onAsr }: { onAsr: () => void }) {
+function Storage({ onAsr, onTts, onChanged }: { onAsr: () => void; onTts: () => void; onChanged: () => void }) {
+  const clipTools = useClipTools();
   const go = useStore((s) => s.go);
+  const notify = useStore((s) => s.notify);
   const saved = useOffline((s) => s.saved);
   const [info, setInfo] = useState<{ downloads: number; models: number; library: number; temp: number; audioCache: number; ttsCache?: number; ttsModels?: number } | null>(null);
-  const load = () => void api.storageInfo().then(setInfo).catch(() => {});
-  useEffect(load, [saved]);
+  const load = () => { void api.storageInfo().then(setInfo).catch(() => {}); onChanged(); };
+  useEffect(() => { void api.storageInfo().then(setInfo).catch(() => {}); }, [saved]);
   const n = Object.keys(saved).length;
   const size = (b?: number) => (info ? (b ? bytes(b) : "0 MB") : "…");
   const clearAll = async () => {
     if (!(await ask({ title: t("删除全部已下载的音频？"), message: t("字幕、精读和收听进度都会保留。"), ok: t("全部删除"), danger: true }))) return;
-    await clearDownloads(); load();
+    await clearDownloads(); load(); notify(t("已清理"));
   };
   return (
     <>
@@ -372,7 +421,7 @@ function Storage({ onAsr }: { onAsr: () => void }) {
           {n > 0 && <button className="btn ghost sm" onClick={() => go({ kind: "downloads" })}>{t("查看")}</button>}
           {n > 0 && <button className="icon-btn" title={t("全部删除")} onClick={clearAll}><Trash2 size={14} /></button>}
         </div>
-        <ClipExportRow />
+        {clipTools && <ClipExportRow />}
         <div className="storage-row">
           <div className="storage-row-text">
             <p className="storage-row-name">{t("语音识别模型")}</p>
@@ -397,7 +446,7 @@ function Storage({ onAsr }: { onAsr: () => void }) {
               <p className="muted small">{t("识别字幕或对齐字幕时留下的音频，播放时优先用它，字幕和声音更准；最多占 2 GB，久不听的先删")}</p>
             </div>
             <span className="storage-size">{size(info.audioCache)}</span>
-            <button className="btn sm" onClick={() => void clearAudioCache().then(load)}>{t("清理")}</button>
+            <button className="btn sm" onClick={() => void clearAudioCache().then(() => { load(); notify(t("已清理")); })}>{t("清理")}</button>
           </div>
         )}
         {!!info?.ttsModels && (
@@ -408,6 +457,7 @@ function Storage({ onAsr }: { onAsr: () => void }) {
             </div>
             <span className="storage-size">{size(info.ttsModels)}</span>
             <button className="btn sm" onClick={() => void api.openDataFolder("tts-models")}><FolderOpen size={13} /> {t("打开文件夹")}</button>
+            <button className="btn ghost sm" onClick={onTts}>{t("管理")}</button>
           </div>
         )}
         {!!info?.ttsCache && (
@@ -418,7 +468,7 @@ function Storage({ onAsr }: { onAsr: () => void }) {
             </div>
             <span className="storage-size">{size(info.ttsCache)}</span>
             <button className="btn ghost sm" onClick={() => void api.openDataFolder("tts-cache")}><FolderOpen size={13} /> {t("打开文件夹")}</button>
-            <button className="btn sm" onClick={() => void api.clearTtsCache().then(load)}>{t("清理")}</button>
+            <button className="btn sm" onClick={() => void api.clearTtsCache().then(() => { load(); notify(t("已清理")); })}>{t("清理")}</button>
           </div>
         )}
         {!!info?.temp && (
@@ -428,11 +478,63 @@ function Storage({ onAsr }: { onAsr: () => void }) {
               <p className="muted small">{t("中断的识别留下的音频，可以放心清理")}</p>
             </div>
             <span className="storage-size">{size(info.temp)}</span>
-            <button className="btn sm" onClick={() => void api.clearTemp().then(load)}>{t("清理")}</button>
+            <button className="btn sm" onClick={() => void api.clearTemp().then(() => { load(); notify(t("已清理")); })}>{t("清理")}</button>
           </div>
         )}
       </div>
     </>
+  );
+}
+
+function CliSettings() {
+  const notify = useStore((s) => s.notify);
+  const [status, setStatus] = useState<CliStatus | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const load = () => { void api.cliStatus().then(setStatus).catch(() => {}); };
+  useEffect(load, []);
+
+  const install = async () => {
+    setBusy(true);
+    try {
+      const next = await api.cliInstall();
+      setStatus(next);
+      notify(next.pathAdded ? t("已安装 subcast 命令，并加入了 PATH（{file}）。新开一个终端窗口就能用", { file: next.pathAdded }) : t("已安装 subcast 命令"));
+    } catch (e) {
+      notify(errorText(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (!status) return <p className="muted small">{t("正在检查…")}</p>;
+  const badge = !status.bundled
+    ? t("仅发布版附带")
+    : status.installed && !status.needsUpdate
+      ? t("已安装")
+      : status.needsUpdate
+        ? t("需要更新链接")
+        : t("未安装");
+
+  return (
+    <div className="provider-form">
+      <p className="muted small">{t("在终端或 AI Agent 中通过 subcast 命令管理订阅、转写、翻译、导读、切片与生词本。")}</p>
+      <p className="small"><span>{t("状态")}：{badge}</span>{status.linkPath ? ` · ${status.linkPath}` : ""}</p>
+      {status.installed && !status.inPath && status.linkPath && (
+        <p className="muted small">
+          {t("新开的终端还找不到 subcast 命令（{dir} 不在 PATH 里）。", { dir: status.linkPath.replace(/[/\\][^/\\]+$/, "") })}{" "}
+          <button className="link-btn" disabled={busy} onClick={install}>{t("自动加入 PATH")}</button>
+        </p>
+      )}
+      {status.bundled && (
+        <div className="row-actions">
+          <button className="btn sm" disabled={busy || (status.installed && !status.needsUpdate)} onClick={install}>
+            {busy ? <Loader2 size={13} className="spin" /> : <Terminal size={13} />}
+            {status.needsUpdate ? t("更新链接") : status.installed ? t("已就绪") : t("安装 subcast 命令")}
+          </button>
+        </div>
+      )}
+    </div>
   );
 }
 

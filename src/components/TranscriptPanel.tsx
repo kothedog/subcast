@@ -17,7 +17,8 @@ import { api, errorText, rawErrorText, type Episode, type ModelInfo, type Segmen
 import { clock, sizeMb } from "../lib/format";
 import { generateTranscript, llmReady, loadTranslation, needsTranslation, stopTranslation, switchYoutubeTrack, translateEpisode, useJobs } from "../lib/jobs";
 import { providerFor, useStore } from "../store";
-import { ASR_SERVICES, CLOUD_ASR_MAIN, type Settings } from "../lib/settings";
+import { useClipTools } from "../lib/clipTools";
+import { ASR_SERVICES, CLOUD_ASR_MAIN, subtitleModeFor, subtitleModePatch, type Settings } from "../lib/settings";
 import { lang, t, tk, tr, useLang } from "../lib/i18n";
 import { looksEnglish } from "../lib/dict";
 import { EpisodeWords, LearnText, LearnTip, WordCard, useLearnMarks, type CardTarget, type LearnMarks } from "./Learn";
@@ -91,11 +92,11 @@ function onLineClick(e: React.MouseEvent, seek: () => void) {
   lineClick = window.setTimeout(() => { if (!window.getSelection()?.toString().trim()) seek(); }, 260);
 }
 
-const Row = memo(function Row({ seg, i, k, zh, active, playingActive, mode, pending, onSeek, query, current, marks, reading, hlClass, hl, onHlPreview, onHlClip, registerRow }: {
+const Row = memo(function Row({ seg, i, k, zh, active, playingActive, mode, pending, onSeek, query, current, marks, reading, hlClass, hl, isVideo, onHlPreview, onHlClip, registerRow }: {
   seg: Segment; i: number; k: number; zh?: string | null; active: boolean; playingActive: boolean; mode: string; pending: boolean;
   onSeek: (t: number, i: number) => void; query: string; current: boolean; marks: LearnMarks | null; reading?: boolean;
   /** Highlight span styling, and the clip that starts at this line (its heading is drawn above it). */
-  hlClass?: string; hl?: HighlightClip; onHlPreview?: (c: HighlightClip) => void; onHlClip?: (c: HighlightClip) => void;
+  hlClass?: string; hl?: HighlightClip; isVideo?: boolean; onHlPreview?: (c: HighlightClip) => void; onHlClip?: (c: HighlightClip) => void;
   registerRow?: (k: number, el: HTMLDivElement | null) => void;
 }) {
   const showZh = mode !== "original";
@@ -141,7 +142,7 @@ const Row = memo(function Row({ seg, i, k, zh, active, playingActive, mode, pend
         <span className="num small muted">{Math.round(hl.end - hl.start)}s</span>
         <span className="spacer" />
         <button type="button" className="link-btn" onClick={() => onHlPreview?.(hl)}>
-          <Play size={11} fill="currentColor" /> {t("试看")}
+          <Play size={11} fill="currentColor" /> {isVideo ? t("试看") : t("试听")}
         </button>
         {onHlClip && (
           <button type="button" className="link-btn hl-clip-btn" onClick={() => onHlClip(hl)}>
@@ -209,7 +210,9 @@ export function TranscriptPanel({ ep }: { ep: Episode }) {
   const [query, setQuery] = useState("");
   const [searching, setSearching] = useState(false);
   const [hit, setHit] = useState(0);
-  const [showHighlights, setShowHighlights] = useState(false);
+  const clipTools = useClipTools();
+  const [showHighlightsRaw, setShowHighlights] = useState(false);
+  const showHighlights = showHighlightsRaw && clipTools;
   const hlBundle = useHighlights((s) => s.bundles[ep.id]);
   const hlLoading = useHighlights((s) => !!s.loading[ep.id]);
   const [startError, setStartError] = useState<string | null>(null);
@@ -225,7 +228,10 @@ export function TranscriptPanel({ ep }: { ep: Episode }) {
   const [aligning, setAligning] = useState(false);
   useEffect(() => { if (!canAlign) setAligning(false); }, [canAlign]);
   const wantsZh = transcript ? needsTranslation(transcript) : false;
-  const mode = wantsZh ? settings.subtitleMode : "original";
+  const epMode = subtitleModeFor(settings, ep);
+  const mode = epMode === "off" ? "off" : wantsZh ? epMode : "original";
+  // "关闭" only hides the subtitles over the video; the transcript here still shows, bilingual where it can.
+  const lineMode = mode === "off" ? (wantsZh ? "bilingual" : "original") : mode;
   const english = useMemo(
     () => (transcript ? looksEnglish(transcript.language, segments.slice(0, 20).map((x) => x.text).join(" ")) : false),
     [transcript, segments],
@@ -233,9 +239,11 @@ export function TranscriptPanel({ ep }: { ep: Episode }) {
   const marks = useLearnMarks(english);
   const learning = !!marks || (english && settings.learnOn);
   const [card, setCard] = useState<CardTarget | null>(null);
-  const [shadow, setShadow] = useState(false);
+  const [shadow, setShadowRaw] = useState(false);
+  const setShadow = useCallback((v: boolean) => { setShadowRaw(v); if (v) setAligning(false); }, []);
+  const openAlign = useCallback(() => { setShadowRaw(false); setAligning(true); }, []);
   useShadowing(shadow && isCurrent, ep.id, segments, transcript?.language?.startsWith("en") ? "en" : "auto");
-  useEffect(() => { if (!learning) setShadow(false); }, [learning]);
+  useEffect(() => { if (!learning) setShadowRaw(false); }, [learning]);
   const closeCard = useCallback(() => setCard(null), []);
   // Looking a word up pauses playback (as Language Reactor and asbplayer do), and closing the card resumes it
   // when the card was what paused it.
@@ -307,13 +315,13 @@ export function TranscriptPanel({ ep }: { ep: Episode }) {
     const starts = new Map<number, HighlightClip>();
     const inside = new Set<number>();
     const ends = new Set<number>();
-    for (const c of hlBundle?.clips ?? []) {
+    for (const c of (clipTools && hlBundle?.clips) || []) {
       starts.set(c.startIdx, c);
       ends.add(c.endIdx);
       for (let i = c.startIdx; i <= c.endIdx; i++) inside.add(i);
     }
     return { starts, inside, ends };
-  }, [hlBundle]);
+  }, [hlBundle, clipTools]);
 
   const matches = useMemo(() => {
     if (!query) return null;
@@ -409,7 +417,7 @@ export function TranscriptPanel({ ep }: { ep: Episode }) {
       setWin({ start: 0, end: rows.length, topPad: 0, bottomPad: 0 });
       return;
     }
-    const est = mode === "bilingual" ? 84 : 46;
+    const est = lineMode === "bilingual" ? 84 : 46;
     heightsRef.current = new Float32Array(rows.length).fill(est);
     const box = list.current;
     const st = box?.scrollTop ?? 0;
@@ -430,7 +438,7 @@ export function TranscriptPanel({ ep }: { ep: Episode }) {
       if (changed) scheduleSync();
     });
     return () => cancelAnimationFrame(raf);
-  }, [virtual, rows.length, ep.id, mode, query, settings.subtitleSize, settings.subtitleFont, scheduleSync]);
+  }, [virtual, rows.length, ep.id, lineMode, query, settings.subtitleSize, settings.subtitleFont, scheduleSync]);
 
   useEffect(() => {
     if (!virtual) return;
@@ -468,7 +476,7 @@ export function TranscriptPanel({ ep }: { ep: Episode }) {
       const w = box.clientWidth;
       if (virtual && Math.abs(w - lastWidthRef.current) > 8) {
         lastWidthRef.current = w;
-        heightsRef.current.fill(mode === "bilingual" ? 84 : 46);
+        heightsRef.current.fill(lineMode === "bilingual" ? 84 : 46);
         for (const [k, el] of rowRefs.current) {
           if (k < heightsRef.current.length) {
             const h = el.getBoundingClientRect().height;
@@ -480,7 +488,7 @@ export function TranscriptPanel({ ep }: { ep: Episode }) {
     });
     ro.observe(box);
     return () => ro.disconnect();
-  }, [virtual, mode, scheduleSync, !!transcript, showHighlights]);
+  }, [virtual, lineMode, scheduleSync, !!transcript, showHighlights]);
 
   const scrollToPos = useCallback((pos: number, behavior: ScrollBehavior) => {
     const box = list.current;
@@ -488,8 +496,11 @@ export function TranscriptPanel({ ep }: { ep: Episode }) {
     const targetIdx = rows[pos];
     const el = box.querySelector<HTMLElement>(`[data-i="${targetIdx}"]`);
     programmaticUntil.current = performance.now() + (behavior === "smooth" ? 650 : 140);
+    box.dataset.autoScrollUntil = String(programmaticUntil.current);
     if (el) {
-      el.scrollIntoView({ block: "center", behavior });
+      // Scrolls the list only: scrollIntoView would also move the episode column when the list sits under the player.
+      const top = el.getBoundingClientRect().top - box.getBoundingClientRect().top + box.scrollTop;
+      box.scrollTo({ top: Math.max(0, top - box.clientHeight / 2 + el.offsetHeight / 2), behavior });
       return;
     }
     if (!virtual) return;
@@ -504,6 +515,7 @@ export function TranscriptPanel({ ep }: { ep: Episode }) {
       const mounted = list.current?.querySelector<HTMLElement>(`[data-i="${targetIdx}"]`);
       if (mounted) {
         programmaticUntil.current = performance.now() + 140;
+        if (list.current) list.current.dataset.autoScrollUntil = String(programmaticUntil.current);
         mounted.scrollIntoView({ block: "center", behavior: "auto" });
       }
     }));
@@ -558,11 +570,14 @@ export function TranscriptPanel({ ep }: { ep: Episode }) {
   const pending = wantsZh && (running || (!error && done < total));
   const start = (force?: "llm" | "google") => { setStartError(null); translateEpisode(ep, transcript, force).catch((e) => setStartError(rawErrorText(e))); };
 
-  const modeControl = wantsZh && (
+  const modeOptions = wantsZh
+    ? (["bilingual", "translation", "original", "off"] as const)
+    : (["original", "off"] as const);
+  const modeControl = (
     <div className="seg-control" role="radiogroup" aria-label={t("字幕显示（快捷键 C）")}>
-      {(["bilingual", "translation", "original"] as const).map((m) => (
-        <button key={m} role="radio" aria-checked={settings.subtitleMode === m} className={settings.subtitleMode === m ? "on" : ""} onClick={() => saveSettings({ subtitleMode: m })}>
-          {m === "bilingual" ? t("双语") : m === "translation" ? t("中文") : t("原文")}
+      {modeOptions.map((m) => (
+        <button key={m} role="radio" aria-checked={mode === m} className={mode === m ? "on" : ""} onClick={() => saveSettings(subtitleModePatch(settings, ep, m))}>
+          {m === "bilingual" ? t("双语") : m === "translation" ? t("中文") : m === "original" ? t("原文") : t("关闭")}
         </button>
       ))}
     </div>
@@ -579,7 +594,7 @@ export function TranscriptPanel({ ep }: { ep: Episode }) {
       </div>
     )}
     {transcript.source.startsWith("youtube") && <TrackPicker ep={ep} language={transcript.language} auto={transcript.source === "youtube-auto"} />}
-    {total > 0 && (
+    {total > 0 && clipTools && (
       <button
         type="button"
         className={`hl-toggle ${showHighlights ? "on" : ""} ${hlBundle?.clips.length ? "has" : ""}`}
@@ -593,7 +608,7 @@ export function TranscriptPanel({ ep }: { ep: Episode }) {
       </button>
     )}
     <button className="icon-btn" title={t("搜索文稿（⌘F）")} onClick={() => { setShowHighlights(false); setSearching(true); setTimeout(() => searchInput.current?.focus(), 0); }}><Search size={15} /></button>
-    {total > 0 && <PanelMenu ep={ep} segments={segments} zh={translation?.items} onRetranslate={wantsZh && canUpgrade ? () => start("llm") : undefined} learn={learning ? { segments, zh: translation?.items, shadow, setShadow, canShadow: isCurrent } : undefined} onAlign={canAlign ? () => setAligning(true) : undefined} />}
+    {total > 0 && <PanelMenu ep={ep} segments={segments} zh={translation?.items} onRetranslate={wantsZh && canUpgrade ? () => start("llm") : undefined} learn={learning ? { segments, zh: translation?.items, shadow, setShadow, canShadow: isCurrent } : undefined} onAlign={canAlign ? openAlign : undefined} />}
   </>;
   const source = SOURCE_LABEL[transcript.source] ? t(SOURCE_LABEL[transcript.source]) : transcript.source;
 
@@ -608,6 +623,7 @@ export function TranscriptPanel({ ep }: { ep: Episode }) {
   const visibleStart = virtual ? win.start : 0;
   const visibleEnd = virtual ? win.end : rows.length;
   const visibleRows = virtual ? rows.slice(visibleStart, visibleEnd) : rows;
+  const hasHours = (segments[segments.length - 1]?.start ?? 0) >= 3600;
 
   return (
     <div className="transcript">
@@ -651,7 +667,7 @@ export function TranscriptPanel({ ep }: { ep: Episode }) {
         />
       ) : (
       <div
-        className={`lines${marks && settings.learnCard ? " learning" : ""}`}
+        className={`lines${marks && settings.learnCard ? " learning" : ""}${hasHours ? " has-hours" : ""}`}
         ref={list}
         onWheel={() => (userScrolled.current = Date.now())}
         onTouchStart={() => (userScrolled.current = Date.now())}
@@ -675,7 +691,7 @@ export function TranscriptPanel({ ep }: { ep: Episode }) {
               zh={translation?.items[i]}
               active={i === active}
               playingActive={i === active && isPlaying}
-              mode={mode}
+              mode={lineMode}
               pending={pending}
               onSeek={aligning && canAlign ? anchorHere : (readingHere || (mode === "translation" && done > 0)) ? readAt : seek}
               query={query}
@@ -684,6 +700,7 @@ export function TranscriptPanel({ ep }: { ep: Episode }) {
               reading={i === readIndex}
               hlClass={hlClass}
               hl={hl}
+              isVideo={!!ep.videoId}
               onHlPreview={onHlPreview}
               onHlClip={ep.videoId ? onHlClip : undefined}
               registerRow={virtual ? registerRow : undefined}

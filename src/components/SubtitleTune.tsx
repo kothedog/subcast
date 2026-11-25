@@ -4,17 +4,33 @@ import { useEffect, useRef, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { ALargeSmall } from "lucide-react";
 import { useStore } from "../store";
+import type { Episode } from "../lib/api";
 import { t, useLang } from "../lib/i18n";
+import { subtitleModeFor, subtitleModePatch, type SubtitleMode } from "../lib/settings";
 import { ACTIONS, prettyCombo } from "../lib/shortcuts";
 import { Seg, SubSizeSliders } from "./ReadingSettings";
-import { toggleTheater } from "./Players";
+import { switchToOriginalAudio, toggleTheater, wantsOriginalAudio } from "./Players";
 
-export function SubtitleTune() {
+export function SubtitleTune({ ep }: { ep?: Episode }) {
   const [open, setOpen] = useState(false);
   const box = useRef<HTMLDivElement>(null);
   useLang((s) => s.lang);
-  const s = useStore(useShallow((x) => ({ subtitleScale: x.settings.subtitleScale, subtitleOrigScale: x.settings.subtitleOrigScale, subtitleLift: x.settings.subtitleLift, subtitleMode: x.settings.subtitleMode, subtitleLook: x.settings.subtitleLook, shortcuts: x.settings.shortcuts })));
+  const s = useStore(useShallow((x) => {
+    const target = ep ?? x.current;
+    return {
+      subtitleScale: x.settings.subtitleScale,
+      subtitleOrigScale: x.settings.subtitleOrigScale,
+      subtitleLift: x.settings.subtitleLift,
+      subtitleMode: subtitleModeFor(x.settings, target),
+      subtitleLook: x.settings.subtitleLook,
+      shortcuts: x.settings.shortcuts,
+    };
+  }));
   const save = useStore((x) => x.saveSettings);
+  const saveMode = (v: SubtitleMode) => {
+    const st = useStore.getState();
+    void save(subtitleModePatch(st.settings, ep ?? st.current, v));
+  };
   useEffect(() => {
     if (!open) return;
     const away = (e: PointerEvent) => { if (!box.current?.contains(e.target as Node)) setOpen(false); };
@@ -34,12 +50,20 @@ export function SubtitleTune() {
           <SubSizeSliders />
           <div className="sub-tune-row">
             <span>{t("显示")}</span>
-            <Seg value={s.subtitleMode} options={[["bilingual", t("双语")], ["translation", t("中文")], ["original", t("原文")]]} onChange={(v) => void save({ subtitleMode: v })} />
+            <Seg value={s.subtitleMode} options={[["bilingual", t("双语")], ["translation", t("中文")], ["original", t("原文")], ["off", t("关闭")]]} onChange={saveMode} />
           </div>
           <div className="sub-tune-row">
             <span>{t("样式")}</span>
             <Seg value={s.subtitleLook ?? "outline"} options={[["box", t("半透明底")], ["outline", t("描边，无底")]]} onChange={(v) => void save({ subtitleLook: v })} />
           </div>
+          {ep?.videoId && (
+            <div className="sub-tune-row">
+              <span>{t("音轨")}</span>
+              {wantsOriginalAudio(ep.videoId)
+                ? <span className="small muted">{t("原声")}</span>
+                : <button className="link-btn" title={t("YouTube 可能按地区自动播放 AI 配音，点这里改回原声")} onClick={() => { setOpen(false); switchToOriginalAudio(ep.videoId); }}>{t("听到的是配音？换成原声")}</button>}
+            </div>
+          )}
           <p className="sub-tune-hint">{t("拖动字幕可以上下移动，双击字幕回到原位。")}{keys && ` ${t("快捷键 {keys} 调大小。", { keys })}`}</p>
           <div className="sub-tune-foot">
             <button className="link-btn" disabled={!changed} onClick={() => void save({ subtitleScale: undefined, subtitleOrigScale: undefined, subtitleLift: undefined })}>{t("恢复默认")}</button>

@@ -23,8 +23,22 @@ export function MonthFilter({ episodes, month, onChange }: { episodes: Episode[]
   }, [episodes]);
   const years = useMemo(() => [...new Set([...counts.keys()].map((k) => Number(k.slice(0, 4))))].sort((a, b) => b - a), [counts]);
   const [year, setYear] = useState<number | null>(null);
-  const y = year ?? (month ? Number(month.slice(0, 4)) : years[0]) ?? new Date().getFullYear();
-  if (!episodes?.length || counts.size < 2) return null;
+  const pickedYear = year != null && years.includes(year) ? year : null;
+  const y = pickedYear ?? (month && years.includes(Number(month.slice(0, 4))) ? Number(month.slice(0, 4)) : years[0]) ?? new Date().getFullYear();
+  if (!episodes?.length) return null;
+  if (counts.size < 2) {
+    if (!month) return null;
+    return (
+      <div className="month-filter" role="group" aria-label={t("按月份筛选")}>
+        <div className="mf-head">
+          <CalendarDays size={14} />
+          <span className="mf-year">{month.slice(0, 4)}</span>
+          <span className="spacer" />
+          <button className="chip sm on" onClick={() => onChange(null)}>{monthName(Number(month.slice(5)), true)} <X size={11} /></button>
+        </div>
+      </div>
+    );
+  }
   const max = Math.max(...counts.values());
   const yearTotal = [...counts.entries()].filter(([k]) => k.startsWith(`${y}-`)).reduce((n, [, c]) => n + c, 0);
   const idx = years.indexOf(y);

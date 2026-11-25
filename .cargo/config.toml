@@ -1,0 +1,8 @@
+[build]
+target-dir = "src-tauri/target"
+
+# Windows: link the C/C++ runtime statically into both subcast.exe and subcast-cli.exe.
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]
+[target.aarch64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]

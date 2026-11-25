@@ -83,7 +83,11 @@ export async function synthesizeText(
   return { url: convertFileSrc(res.path), path: res.path, seconds: res.seconds, rate: req.rate ?? 1 };
 }
 
+/** Called whenever reading aloud stops or something else starts speaking (the read-along player listens). */
+export const stopHooks = new Set<() => void>();
+
 export function stopSpeaking() {
+  for (const h of stopHooks) h();
   session++;
   audio?.pause();
   audio = null;
@@ -260,7 +264,7 @@ function pickWebVoice(text: string, preferred?: string, fallbackPrefix?: "zh" | 
 /** Speaks one chunk/line using the OS Enhanced/Premium Web Speech voice, resolving when finished or canceled. */
 export function speakSystemAsync(
   text: string,
-  opts?: { voice?: string; rate?: number; isCanceled?: () => boolean },
+  opts?: { voice?: string; rate?: number; isCanceled?: () => boolean; onBoundary?: (spokenChars: number) => void },
 ): Promise<void> {
   const synth = window.speechSynthesis;
   if (!synth) return Promise.resolve();
@@ -283,6 +287,8 @@ export function speakSystemAsync(
     else { u.lang = /[\u4e00-\u9fff]/.test(trimmed) ? "zh-CN" : "en-US"; }
     u.rate = Math.min(2, Math.max(0.5, opts?.rate ?? 1));
     u.onend = () => finish();
+    // Each word as it starts; charIndex counts from the start of the trimmed text.
+    if (opts?.onBoundary) u.onboundary = (ev) => opts.onBoundary!(text.indexOf(trimmed) + ev.charIndex + (ev.charLength || 1));
     u.onerror = (ev) => {
       if (opts?.isCanceled?.() || ev.error === "canceled" || ev.error === "interrupted") finish();
       else finish(new Error(t("系统语音播放失败")));

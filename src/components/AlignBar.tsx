@@ -29,7 +29,13 @@ function nudge(secs: number) {
 }
 
 export function AlignBar({ onClose }: { onClose: () => void }) {
-  const { align, current, skipAds, saveSettings } = useStore(useShallow((s) => ({ align: s.current && s.align?.id === s.current.id ? s.align : null, current: s.current, skipAds: !!s.settings.skipAds, saveSettings: s.saveSettings })));
+  const { align, current, time, skipAds, saveSettings } = useStore(useShallow((s) => ({
+    align: s.current && s.align?.id === s.current.id ? s.align : null,
+    current: s.current,
+    time: Math.floor(s.time),
+    skipAds: !!s.settings.skipAds,
+    saveSettings: s.saveSettings,
+  })));
   const [progress, setProgress] = useState<number | null>(null);
   useEffect(() => {
     const off = listen<{ episodeId: string; progress: number | null }>("align", (e) => { if (e.payload.episodeId === current?.id) setProgress(e.payload.progress); });
@@ -37,6 +43,8 @@ export function AlignBar({ onClose }: { onClose: () => void }) {
   }, [current?.id]);
   const working = align?.status === "working";
   const ads = gaps(align?.map).length;
+  const rawOffset = align?.map?.pieces.length ? Math.round((toPlay(align.map, time) - time) * 10) / 10 : 0;
+  const offsetBadge = Math.abs(rawOffset) >= 0.1 ? `${rawOffset > 0 ? "+" : ""}${rawOffset.toFixed(1)}s` : null;
   const status = working
     ? progress != null ? t("正在下载你听到的这份音频来比对 {pct}%", { pct: Math.round(progress * 100) }) : t("正在比对字幕和你听到的音频，可能要一两分钟…")
     : align?.status === "same" ? t("字幕就是按你听到的这份音频做的，时间应该一致")
@@ -49,6 +57,7 @@ export function AlignBar({ onClose }: { onClose: () => void }) {
       <div className="align-row">
         {working && <Loader2 size={13} className="spin" />}
         <span className="align-status">{status}</span>
+        {offsetBadge && <span className="align-offset num" title={t("当前字幕时间偏移")}>{offsetBadge}</span>}
         <button className="icon-btn sm" onClick={onClose} aria-label={t("关闭")}><X size={14} /></button>
       </div>
       <p className="align-hint">{t("边听边点：听到哪句就点哪句，从那句起字幕会对上声音。")}</p>

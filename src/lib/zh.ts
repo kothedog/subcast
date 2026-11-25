@@ -116,21 +116,25 @@ export function useZhParagraphs(text: string | undefined, enabled: boolean): str
 export { CJK };
 
 import { PICKS, shortName, showName } from "./picks";
+import { useStore } from "../store";
 
 /** A pure transliteration of a person's name ("德瓦克什·帕特尔") tells a Chinese reader nothing; drop it. */
 const isTransliteration = (zh: string) => /^[\u4e00-\u9fff]{1,8}(·[\u4e00-\u9fff]{1,8})+$/.test(zh.trim());
 
-/** Bilingual show name: a curated Chinese name when we have one, else a machine translation (unless it is only a
- *  transliteration), plus the original. `zh` is undefined when the name is already Chinese, has no useful
- *  translation, or the interface is not Chinese. */
-export function useShowName(title: string): { zh?: string; orig: string } {
+/** Bilingual show name: user's custom alias first, else a curated Chinese name or machine translation when
+ *  `translateShowNames` is enabled, plus the original. */
+export function useShowName(title: string, showId?: string): { zh?: string; orig: string; aliased?: boolean } {
+  const alias = useStore((s) => (showId ? s.settings.showAliases?.[showId]?.trim() : undefined));
   const chinese = targetOf(useLang((s) => s.lang)) != null;
   const names = useLang((s) => s.names);
-  const on = chinese && names;
+  const on = chinese && names && !alias;
   const orig = shortName(title);
   const pick = PICKS.find((x) => x.title === title || shortName(x.title) === orig);
-  // Not requested at all when off: no translation work for names the user does not want translated.
+  // Not requested at all when off or aliased: no translation work for names the user does not want translated.
   const auto = useZh(on && !pick ? orig : undefined);
+  if (alias) {
+    return { zh: alias !== orig ? alias : undefined, orig: alias === orig ? alias : orig, aliased: true };
+  }
   const zh = !on ? undefined : pick ? t(pick.zh) : auto && !isTransliteration(auto) ? auto : undefined;
   return { zh: zh && zh !== orig && !isZh(orig) ? zh : undefined, orig };
 }

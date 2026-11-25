@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-db-data-version"
+description = "Enables the db_data_version command without any pre-configured scope."
+commands.allow = ["db_data_version"]
+
+[[permission]]
+identifier = "deny-db-data-version"
+description = "Denies the db_data_version command without any pre-configured scope."
+commands.deny = ["db_data_version"]

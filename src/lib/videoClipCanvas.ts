@@ -52,6 +52,12 @@ export interface RenderedCueBand {
 
 const SANS = '-apple-system, "PingFang SC", "Hiragino Sans GB", "Noto Sans SC", "Microsoft YaHei", sans-serif';
 const NO_START = /^[，。、：；！？）」』》”’,.;:!?)\]…—]/;
+
+let sharedProbeCtx: CanvasRenderingContext2D | null = null;
+function getProbeCtx(): CanvasRenderingContext2D {
+  if (!sharedProbeCtx) sharedProbeCtx = document.createElement("canvas").getContext("2d")!;
+  return sharedProbeCtx;
+}
 const even = (v: number) => Math.max(2, Math.round(v / 2) * 2);
 
 const RATIO: Record<Exclude<ClipAspect, "source">, [number, number]> = { "9:16": [1080, 1920], "3:4": [1080, 1440], "1:1": [1080, 1080], "16:9": [1920, 1080] };
@@ -346,16 +352,24 @@ export function renderCueBand(cue: Pick<Cue, "orig" | "zh">, config: ClipVisualC
   const padX = Math.round(60 * unit);
   const maxTextW = W - padX * 2;
 
-  const probe = document.createElement("canvas").getContext("2d")!;
+  const probe = getProbeCtx();
   probe.font = `700 ${zhSize}px ${SANS}`;
   const zhLines = config.subLang !== "original" && cue.zh ? wrapText(probe, cue.zh, maxTextW, 2) : [];
   probe.font = `500 ${origSize}px ${SANS}`;
   const origLines = (config.subLang !== "translation" || !zhLines.length) && cue.orig ? wrapText(probe, cue.orig, maxTextW, 2) : [];
 
-  const gap = zhLines.length && origLines.length ? Math.round(8 * unit) : 0;
+  const lineGap = Math.round(8 * unit);
+  const gap = zhLines.length && origLines.length ? lineGap : 0;
   const textH = zhLines.length * zhLH + gap + origLines.length * origLH;
   const padY = Math.round((config.subStyle === "pill" ? 22 : 14) * unit);
-  const bandH = Math.max(Math.round(70 * unit), textH + padY * 2);
+  // Uniform band height & Y per export config so FFmpeg streams all cues through one O(1) concat overlay.
+  const maxTextH =
+    config.subLang === "bilingual"
+      ? 2 * zhLH + lineGap + 2 * origLH
+      : config.subLang === "original"
+        ? 2 * origLH
+        : Math.max(2 * zhLH, 2 * origLH);
+  const bandH = Math.max(Math.round(70 * unit), Math.max(textH, maxTextH) + padY * 2);
 
   const c = document.createElement("canvas");
   c.width = W;
@@ -369,7 +383,10 @@ export function renderCueBand(cue: Pick<Cue, "orig" | "zh">, config: ClipVisualC
   for (const ln of origLines) maxLineW = Math.max(maxLineW, g.measureText(ln).width);
 
   const paper = card && config.cardBg === "paper";
-  const boxTop = Math.round((bandH - textH) / 2);
+  const below = H - (video.y + video.h);
+  const sitsUnderCard = card && below >= bandH + 40 * unit;
+  // Below a card: align to top of the band; overlaid on video: anchor to bottom so cues share one baseline.
+  const boxTop = sitsUnderCard ? padY : Math.max(padY, bandH - textH - padY);
   if (config.subStyle === "pill" && maxLineW > 0) {
     const px = Math.round(30 * unit), py = Math.round(14 * unit);
     const pw = Math.min(W - padX, maxLineW + px * 2);

@@ -10,8 +10,10 @@ import { ChatPrefsDialog, ModelPicker, PromptMenu, promptIcon, shortModel } from
 import { llmReady, useJobs } from "../lib/jobs";
 import { warmAgent } from "../lib/agents";
 import { providerFor, seekSoon, useStore } from "../store";
+import { useClipTools } from "../lib/clipTools";
 import { Markdown } from "./Markdown";
-import { AnswerActions, HistoryMenu, QuestionActions, type ArchivedChat } from "./ChatActions";
+import { AnswerActions, CopyMenu, HistoryMenu, QuestionActions, type ArchivedChat } from "./ChatActions";
+import { ReadAloud } from "./ReadAloud";
 import { AskArt, NightNote, PageArt, PlugArt } from "./Illustrations";
 import { createManualClip, rangeFromClock } from "../lib/highlights";
 import { openVideoClipDialog } from "./VideoClipDialog";
@@ -31,14 +33,26 @@ function useConnected() {
 
 function ConnectCard({ what }: { what: string }) {
   const [later, setLater] = useState(false);
-  if (later) return null;
+  const connect = () => {
+    const s = useStore.getState();
+    void s.saveSettings({ chatProvider: s.settings.chatProvider || "deepseek" });
+    s.openSettings("model");
+  };
+  if (later) {
+    return (
+      <div className="setup-note">
+        <span>{t("{what}还差一个模型", { what: t(what) })}</span>
+        <button className="btn primary sm" onClick={connect}>{t("连接模型")}</button>
+      </div>
+    );
+  }
   return (
     <div className="connect-card">
       <PlugArt className="cc-art" />
       <p className="es-title">{t("{what}还差一个模型", { what: t(what) })}</p>
       <p className="muted">{t("推荐 DeepSeek，国内直连，一集约 ¥0.1。Key 只保存在本机。")}</p>
       <div className="row-actions center">
-        <button className="btn primary" onClick={() => { const s = useStore.getState(); void s.saveSettings({ chatProvider: s.settings.chatProvider || "deepseek" }); s.openSettings("model"); }}>{t("连接模型")}</button>
+        <button className="btn primary" onClick={connect}>{t("连接模型")}</button>
         <button className="btn ghost" onClick={() => setLater(true)}>{t("稍后")}</button>
       </div>
     </div>
@@ -109,14 +123,15 @@ export function ChatPanel({ ep }: { ep: Episode }) {
   useEffect(() => { warmAgent(providerFor(useStore.getState().settings, "chat")); }, [chatProvider]);
   const seek = useSeek(ep);
   const translation = useJobs((s) => s.translations[ep.id]);
+  const clipTools = useClipTools();
   const clipRange = useMemo(() => {
-    if (!ep.videoId || !transcript?.segments.length) return undefined;
+    if (!clipTools || !ep.videoId || !transcript?.segments.length) return undefined;
     return (start: number, end?: number) => {
       const { startIdx, endIdx } = rangeFromClock(transcript.segments, start, end);
       const clip = createManualClip(transcript.segments, translation?.items, startIdx, endIdx, ep);
       openVideoClipDialog({ ep, segments: transcript.segments, zh: translation?.items, clip });
     };
-  }, [ep, transcript, translation?.items]);
+  }, [ep, transcript, translation?.items, clipTools]);
   const messages = useChats((s) => s[ep.id]?.messages ?? NO_MESSAGES);
   const streaming = useChats((s) => s[ep.id]?.streaming ?? null);
   const [input, setInput] = useState("");
@@ -176,17 +191,27 @@ export function ChatPanel({ ep }: { ep: Episode }) {
       chatAborts.delete(ep.id);
     }
   };
+  const [editAt, setEditAt] = useState<number | null>(null);
   const send = (text: string) => {
     const q = text.trim();
     if (!q || streaming != null) return;
+    const base = editAt != null ? messages.slice(0, editAt) : messages;
+    setEditAt(null);
     setInput("");
-    void ask([...messages, { role: "user", content: q }]);
+    void ask([...base, { role: "user", content: q }]);
   };
   /** Index of the question an answer belongs to (the user message right before it). */
   const pairStart = (i: number) => (messages[i]?.role === "assistant" && messages[i - 1]?.role === "user" ? i - 1 : i);
-  const removePair = (i: number) => { const a = pairStart(i); const b = messages[a + 1]?.role === "assistant" ? a + 2 : a + 1; save([...messages.slice(0, a), ...messages.slice(b)]); };
+  const removePair = (i: number) => {
+    const prev = messages;
+    const a = pairStart(i);
+    const b = messages[a + 1]?.role === "assistant" ? a + 2 : a + 1;
+    if (editAt != null && a <= editAt) setEditAt(null);
+    save([...messages.slice(0, a), ...messages.slice(b)]);
+    useStore.getState().notify(t("已删除"), { label: t("撤销"), run: () => save(prev) });
+  };
   const retry = () => { const i = messages.length - 1; if (messages[i]?.role === "assistant" && streaming == null) void ask(messages.slice(0, i)); };
-  const edit = (i: number) => { setInput(messages[i].content); save(messages.slice(0, i)); window.setTimeout(() => box.current?.focus(), 0); };
+  const edit = (i: number) => { setEditAt(i); setInput(messages[i].content); window.setTimeout(() => box.current?.focus(), 0); };
   const newChat = () => {
     if (!messages.length) return;
     saveArchive([{ id: `${Date.now()}`, at: Date.now(), messages }, ...archive].slice(0, 30));
@@ -204,6 +229,7 @@ export function ChatPanel({ ep }: { ep: Episode }) {
 
   return (
     <div className="chat">
+      <div className="chat-stage">
       <div className="chat-scroll" ref={scroller} onScroll={onScroll}>
         {empty && connected === false && <ConnectCard what={tk("问答")} />}
         {empty && connected !== false && (
@@ -257,6 +283,13 @@ export function ChatPanel({ ep }: { ep: Episode }) {
         <div ref={end} />
       </div>
       {!atBottom && (messages.length > 0 || streaming != null) && <button type="button" className="to-bottom" title={t("回到底部")} aria-label={t("回到底部")} onClick={toBottom}><ArrowDown size={16} /></button>}
+      </div>
+      {editAt != null && (
+        <div className="edit-banner small">
+          <span>{t("正在编辑历史提问，发送后将从此处重新生成")}</span>
+          <button type="button" className="link-btn small" onClick={() => { setEditAt(null); setInput(""); }}>{t("取消")}</button>
+        </div>
+      )}
       <form className="composer" onSubmit={(e) => { e.preventDefault(); void send(input); }} onClick={(e) => { if (e.target === e.currentTarget) box.current?.focus(); }}>
         <textarea
           ref={box}
@@ -285,8 +318,9 @@ export function ChatPanel({ ep }: { ep: Episode }) {
 }
 /** 导读 runs per episode outside the panel, so switching tabs or episodes mid-run neither loses the result
  *  nor offers to start (and pay for) the same run again. */
-interface GuideJob { summary?: string | null; streaming: string | null; error: string | null; needsSetup: boolean; shared?: boolean; checking?: boolean }
+interface GuideJob { summary?: string | null; streaming: string | null; error: string | null; needsSetup: boolean; shared?: boolean; checking?: boolean; model?: string }
 const useGuides = create<Record<string, GuideJob>>(() => ({}));
+const guideAborts = new Map<string, AbortController>();
 const putGuide = (id: string, p: Partial<GuideJob>) => useGuides.setState((s) => ({ [id]: { ...(s[id] ?? { streaming: null, error: null, needsSetup: false }), ...p } }));
 
 export function SummaryPanel({ ep }: { ep: Episode }) {
@@ -294,14 +328,15 @@ export function SummaryPanel({ ep }: { ep: Episode }) {
   const translation = useJobs((s) => s.translations[ep.id]);
   const connected = useConnected();
   const seek = useSeek(ep);
+  const clipTools = useClipTools();
   const clipRange = useMemo(() => {
-    if (!ep.videoId || !transcript?.segments.length) return undefined;
+    if (!clipTools || !ep.videoId || !transcript?.segments.length) return undefined;
     return (start: number, end?: number) => {
       const { startIdx, endIdx } = rangeFromClock(transcript.segments, start, end);
       const clip = createManualClip(transcript.segments, translation?.items, startIdx, endIdx, ep);
       openVideoClipDialog({ ep, segments: transcript.segments, zh: translation?.items, clip });
     };
-  }, [ep, transcript, translation?.items]);
+  }, [ep, transcript, translation?.items, clipTools]);
   const job = useGuides((s) => s[ep.id]);
   const summary = job?.summary ?? null;
   const streaming = job?.streaming ?? null;
@@ -312,9 +347,9 @@ export function SummaryPanel({ ep }: { ep: Episode }) {
   useEffect(() => {
     if (useGuides.getState()[ep.id]?.streaming != null) return;
     void (async () => {
-      const [v, from] = await Promise.all([api.getBlob(ep.id, "summary"), api.getBlob(ep.id, "summary-from")]);
+      const [v, from, model] = await Promise.all([api.getBlob(ep.id, "summary"), api.getBlob(ep.id, "summary-from"), api.getBlob(ep.id, "summary-model")]);
       if (useGuides.getState()[ep.id]?.streaming != null) return;
-      if (v) { putGuide(ep.id, { summary: v, shared: from === "shared" }); return; }
+      if (v) { putGuide(ep.id, { summary: v, shared: from === "shared", model: model || undefined }); return; }
       // Someone may have shared one: checked before offering to generate (and pay for) it.
       putGuide(ep.id, { summary: null, checking: true });
       const hit = await api.sharedGuide(ep.id).catch(() => null);
@@ -326,19 +361,32 @@ export function SummaryPanel({ ep }: { ep: Episode }) {
   const run = async () => {
     if (useGuides.getState()[ep.id]?.streaming != null) return;
     putGuide(ep.id, { error: null, needsSetup: false });
+    const ctl = new AbortController();
+    guideAborts.set(ep.id, ctl);
     try {
       await check();
+      const modelLabel = [provider ? t(provider.name) : "", provider?.model ? shortModel(provider.model) : ""].filter(Boolean).join(" · ");
       putGuide(ep.id, { streaming: "" });
-      const text = await askEpisode({ provider: provider!, title: ep.title, show: ep.showTitle ?? "", transcript: context(), history: [{ role: "user", content: summaryPrompt(transcript?.segments[transcript.segments.length - 1]?.end ?? ep.duration) }], onDelta: (d) => putGuide(ep.id, { streaming: d }) });
+      const text = await askEpisode({ provider: provider!, title: ep.title, show: ep.showTitle ?? "", transcript: context(), history: [{ role: "user", content: summaryPrompt(transcript?.segments[transcript.segments.length - 1]?.end ?? ep.duration) }], onDelta: (d) => putGuide(ep.id, { streaming: d }), signal: ctl.signal });
       // Some agents only stream: keep what arrived if the final answer comes back empty.
       const out = text.trim() ? text : (useGuides.getState()[ep.id]?.streaming ?? "");
       if (!out.trim()) throw new Error(t("模型没有返回内容，请重试或换一个模型"));
-      putGuide(ep.id, { summary: out, shared: false });
+      putGuide(ep.id, { summary: out, shared: false, model: modelLabel });
       await api.setBlob(ep.id, "summary", out);
+      if (modelLabel) void api.setBlob(ep.id, "summary-model", modelLabel);
+      void api.setBlob(ep.id, "summary-from", "local");
       void api.shareGuide(ep.id, out, `${provider!.name} · ${provider!.model}`).catch(() => {});
-    } catch (e) { putGuide(ep.id, { error: errorText(e), needsSetup: Boolean((e as { setup?: boolean })?.setup) || /设置|API Key/.test(rawErrorText(e)) }); }
-    finally { putGuide(ep.id, { streaming: null }); }
+    } catch (e) {
+      if (!ctl.signal.aborted) {
+        putGuide(ep.id, { error: errorText(e), needsSetup: Boolean((e as { setup?: boolean })?.setup) || /设置|API Key/.test(rawErrorText(e)) });
+      }
+    }
+    finally {
+      guideAborts.delete(ep.id);
+      putGuide(ep.id, { streaming: null });
+    }
   };
+  const stop = () => { guideAborts.get(ep.id)?.abort(); };
 
   const text = streaming ?? summary;
   if (!text && connected === false) return <div className="panel-empty"><ConnectCard what={tk("导读")} /></div>;
@@ -348,6 +396,7 @@ export function SummaryPanel({ ep }: { ep: Episode }) {
         <PageArt writing />
         <p className="es-title">{t("正在通读整期文字稿")}</p>
         <p className="wait-steps" aria-hidden><span>{t("先划出重点")}</span><span>{t("再理一条时间线")}</span><span>{t("挑几句值得记住的原话")}</span></p>
+        <button className="btn ghost sm" onClick={stop}><Square size={12} fill="currentColor" /> {t("停止")}</button>
         <span className="sr-only">{t("正在生成…")}</span>
       </div>
     );
@@ -366,16 +415,31 @@ export function SummaryPanel({ ep }: { ep: Episode }) {
       </div>
     );
   }
+  const fallbackModel = [provider ? t(provider.name) : "", provider?.model ? shortModel(provider.model) : ""].filter(Boolean).join(" · ");
+  const byLabel = job?.shared ? t("来自共享导读，没有花你的额度") : (job?.model || fallbackModel);
+  const readGuideText = () => text.replace(/\[\d{1,2}:\d{2}(?::\d{2})?(?:\s*[-–~至]\s*\d{1,2}:\d{2}(?::\d{2})?)?\]/g, "").replace(/[#*`>]/g, "").trim();
   return (
     <div className="summary">
       <Markdown text={text} onSeek={seek} onClip={clipRange} />
-      {streaming == null && (
+      {streaming != null ? (
         <div className="summary-foot">
-          <span className="muted small">{job?.shared ? t("来自共享导读，没有花你的额度") : `${provider ? t(provider.name) : ""} · ${provider?.model ?? ""}`}</span>
+          <span className="muted small"><Loader2 size={12} className="spin" /> {t("正在生成…")}</span>
+          <button className="btn ghost sm" onClick={stop}><Square size={12} fill="currentColor" /> {t("停止")}</button>
+        </div>
+      ) : (
+        <div className="summary-foot">
+          <span className="muted small clamp1">{byLabel}</span>
+          <ReadAloud text={readGuideText} title={t("朗读导读")} />
+          <CopyMenu text={text} ep={ep} />
           <button className="btn ghost sm" onClick={run}><RefreshCw size={13} /> {t("重新生成")}</button>
         </div>
       )}
-      {error && <p className="error-text">{error}</p>}
+      {error && (
+        <div className="row-actions">
+          <p className="error-text">{error}</p>
+          {needsSetup && <button className="btn sm" onClick={() => useStore.getState().openSettings("model")}>{t("去设置")}</button>}
+        </div>
+      )}
     </div>
   );
 }

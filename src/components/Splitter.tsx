@@ -40,6 +40,8 @@ export function Splitter({ value, min, max, def, snap, edge, onChange, onCollaps
         document.body.classList.remove("resizing");
         if (w < snap) onCollapse();
       }}
+      onPointerCancel={() => { start.current = null; document.body.classList.remove("resizing"); }}
+      onLostPointerCapture={() => { start.current = null; document.body.classList.remove("resizing"); }}
       onDoubleClick={() => onChange(def)}
       onKeyDown={(e) => {
         const grow = edge === "right" ? "ArrowRight" : "ArrowLeft";

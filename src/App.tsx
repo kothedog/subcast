@@ -23,6 +23,7 @@ import { DiscoverView, DownloadsView, LatestView, RecentView, ShowView, ChannelV
 import { startOffline } from "./lib/offline";
 import { loadFavorites } from "./lib/library";
 import { startUpdateChecks } from "./lib/updater";
+import { AgentConnectOffer } from "./components/AgentConnect";
 import { UpdateBanner } from "./components/UpdateBanner";
 import { EpisodeView } from "./components/EpisodeView";
 import { VideoDock } from "./components/VideoDock";
@@ -73,7 +74,11 @@ export default function App() {
       if (!action) return;
       // Text boxes keep their own keys: plain ones, and arrows with modifiers (⌘↑ jumps to the top).
       if (typing && (isPlain(combo) || combo.includes("Arrow"))) return;
+      // Don't hijack Space on focused interactive controls (buttons, tabs, radios, links).
+      if (combo === "Space" && (e.target as HTMLElement).closest?.("button, a, [role=button], [role=tab], [role=radio]")) return;
       if (document.querySelector(".shortcut-recorder.recording")) return;
+      // Don't hijack Space/arrows for the background player while a modal dialog is open; ⌘/ still closes its own help dialog.
+      if (document.querySelector(".modal-back") && !(action === "keysHelp" && useKeysHelp.getState().open)) return;
       const { player, time, current } = useStore.getState();
       const segs = current ? useJobs.getState().transcripts[current.id]?.segments : undefined;
       const lineSeek = (dir: -1 | 1) => {
@@ -139,7 +144,7 @@ export default function App() {
   return (
     <div className={`app ${sideOpen ? "" : "side-collapsed"}`} style={{ "--sidebar-w": `${sideOpen ? sidebar : 72}px` } as React.CSSProperties}>
       <Sidebar />
-      <Splitter value={sideOpen ? sidebar : 72} min={SIDEBAR.min} max={SIDEBAR.max} def={SIDEBAR.def} snap={SIDEBAR.snap} edge="right" label={t("侧栏宽度")} onChange={(w) => putLayout({ sidebar: w, sideOpen: true })} onCollapse={() => putLayout({ sideOpen: false })} />
+      {sideOpen && <Splitter value={sidebar} min={SIDEBAR.min} max={SIDEBAR.max} def={SIDEBAR.def} snap={SIDEBAR.snap} edge="right" label={t("侧栏宽度")} onChange={(w) => putLayout({ sidebar: w, sideOpen: true })} onCollapse={() => putLayout({ sideOpen: false })} />}
       <Main view={view} lang={lang} />
       <MiniPlayer />
       <AudioEngine />
@@ -150,6 +155,7 @@ export default function App() {
       <SelectionTools />
       <VideoClipDialog />
       <UpdateBanner />
+      <AgentConnectOffer />
       <ConfirmHost />
       <Toast />
     </div>

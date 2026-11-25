@@ -10,17 +10,9 @@ import { AGENTS, agentOf, agentProvider, agentProviderId, detectAgents, useAgent
 import { GROUPS } from "../lib/settings";
 import { DefaultButton } from "./KeyField";
 import { Seg } from "./ReadingSettings";
-import { providerIcon } from "../lib/providerIcons";
+import { Mark } from "./ProviderMark";
 import { useStore } from "../store";
 import { t, tk, tr, useLang } from "../lib/i18n";
-
-/** The service's own mark where we have it, else its initials on a tint. */
-function Mark({ id, name, size = 28 }: { id: string; name: string; size?: number }) {
-  const icon = providerIcon(id);
-  if (icon) return <span className="ms-mark has-icon" style={{ width: size, height: size }} aria-hidden dangerouslySetInnerHTML={{ __html: icon }} />;
-  const letters = name.replace(/[（(].*$/, "").trim().split(/\s+/).map((w) => w[0]).join("").slice(0, 2).toUpperCase();
-  return <span className="ms-mark" style={{ width: size, height: size, fontSize: size * 0.4 }} aria-hidden>{letters}</span>;
-}
 
 const RECOMMENDED = ["deepseek", "siliconflow", "openrouter"];
 /** How many entries each list shows before 「更多」. */
@@ -32,7 +24,7 @@ const STATUS: Record<FoundAgent["login"], { text: string; tone: "ok" | "warn" | 
   unknown: { text: tk("待确认"), tone: "idle" },
 };
 
-export function ModelSettings({ ProviderEditor }: { ProviderEditor: (props: { p: Provider; onChange: (p: Provider) => void }) => React.ReactElement }) {
+export function ModelSettings({ ProviderEditor }: { ProviderEditor: (props: { p: Provider; onChange: (p: Provider) => void; onKeyChange?: () => void }) => React.ReactElement }) {
   const { settings, saveSettings } = useStore(useShallow((s) => ({ settings: s.settings, saveSettings: s.saveSettings })));
   const { found, checking } = useAgents();
   useLang((s) => s.lang);
@@ -40,13 +32,21 @@ export function ModelSettings({ ProviderEditor }: { ProviderEditor: (props: { p:
   const [more, setMore] = useState(false);
   const [moreAgents, setMoreAgents] = useState(false);
   const [keys, setKeys] = useState<Record<string, boolean>>({});
+  const [keyRev, setKeyRev] = useState(0);
   useEffect(() => { if (found == null) void detectAgents(); }, []);
   const apiProviders = useMemo(() => Object.values(settings.providers).filter((p) => p.protocol !== "cli"), [settings.providers]);
   useEffect(() => {
     void Promise.all(apiProviders.filter((p) => p.needsKey).map(async (p) => [p.id, await api.hasApiKey(p.id)] as const)).then((r) => setKeys(Object.fromEntries(r)));
-  }, [apiProviders.length, editing]);
+  }, [apiProviders.length, editing, keyRev]);
 
-  const used = (id: string) => (settings.translateProvider === id && settings.translateMode !== "google" ? t("默认") : "");
+  const used = (id: string) => {
+    const isChat = settings.chatProvider === id;
+    const isTrans = settings.translateProvider === id && settings.translateMode !== "google";
+    if (isChat && isTrans) return t("默认");
+    if (isChat) return t("问答");
+    if (isTrans) return t("翻译");
+    return "";
+  };
   const ready = (p: Provider) => !p.needsKey || keys[p.id];
   const inUse = (id: string) => settings.chatProvider === id || settings.translateProvider === id;
   // Up front: what's in use, then what has a key, then the recommended ones; three at most (plus the open one).
@@ -142,7 +142,7 @@ export function ModelSettings({ ProviderEditor }: { ProviderEditor: (props: { p:
             : p ? (
               <>
                 <div className="ms-head"><Mark id={p.id} name={tr(p.name)} size={36} /><div><p className="ms-title">{tr(p.name)}</p><p className="muted small">{p.needsKey ? t("用你自己的 API Key，按用量付费给服务商。Key 只存在本机钥匙串。") : t("在你电脑上运行的模型服务，不需要 Key。")}</p></div></div>
-                <ProviderEditor key={p.id} p={p} onChange={update} />
+                <ProviderEditor key={p.id} p={p} onChange={update} onKeyChange={() => setKeyRev((n) => n + 1)} />
               </>
             ) : null}
         </section>

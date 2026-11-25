@@ -1,0 +1,24 @@
+[package]
+name = "subcast-cli"
+version = "0.3.3"
+license = "AGPL-3.0-only"
+description = "Command-line interface for SubCast"
+authors = ["Qiaomu"]
+edition = "2024"
+
+[[bin]]
+name = "subcast-cli"
+path = "src/main.rs"
+
+[dependencies]
+subcast-core = { path = "../subcast-core" }
+clap = { version = "4", features = ["derive", "env", "wrap_help"] }
+clap_complete = "4"
+tokio = { version = "1", features = ["full"] }
+anyhow = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+dirs = "5"
+base64 = "0.22"
+uuid = { version = "1", features = ["v4"] }

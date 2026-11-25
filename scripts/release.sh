@@ -63,6 +63,10 @@ if [ "$SKIP_MAC" = 0 ]; then
     echo "==> building $TARGET"
     APPLE_SIGNING_IDENTITY="$IDENTITY" npm run tauri build -- --target "$TARGET" --bundles app
     APP="src-tauri/target/$TARGET/release/bundle/macos/SubCast.app"
+    cargo build --release --target "$TARGET" -p subcast-cli
+    cp "src-tauri/target/$TARGET/release/subcast-cli" "$APP/Contents/MacOS/subcast-cli"
+    codesign --force --options runtime --timestamp --entitlements src-tauri/Entitlements.plist --sign "$IDENTITY" "$APP/Contents/MacOS/subcast-cli"
+    codesign --force --options runtime --timestamp --entitlements src-tauri/Entitlements.plist --sign "$IDENTITY" "$APP"
     codesign --verify --deep --strict "$APP"
 
     echo "==> notarizing the app ($ARCH)"

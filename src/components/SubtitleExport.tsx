@@ -5,6 +5,7 @@ import { Modal } from "./Chrome";
 import { Seg } from "./ReadingSettings";
 import { api, errorText, type Episode, type Segment } from "../lib/api";
 import { t, useLang } from "../lib/i18n";
+import { subtitleModeFor } from "../lib/settings";
 import { useStore } from "../store";
 import type { TimeMap } from "../lib/timemap";
 import { buildBlocks, buildCues, fileName, FORMATS, onClock, render, type SubContent, type SubFormat } from "../lib/subexport";
@@ -29,12 +30,13 @@ function remembered(): { format: SubFormat; content?: SubContent } {
 
 export function SubtitleExport({ ep, segments, zh, onClose }: { ep: Episode; segments: Segment[]; zh: (string | null | undefined)[] | undefined; onClose: () => void }) {
   useLang((s) => s.lang);
-  const mode = useStore((s) => s.settings.subtitleMode);
+  const mode = useStore((s) => subtitleModeFor(s.settings, ep));
+  const defaultContent: SubContent = mode === "off" ? (zh?.some((x) => !!x?.trim()) ? "bilingual" : "original") : mode;
   const notify = useStore((s) => s.notify);
   const translated = zh ? segments.filter((_, i) => !!zh[i]?.trim()).length : 0;
   const last = useMemo(remembered, []);
   const [format, setFormat] = useState<SubFormat>(last.format);
-  const [content, setContent] = useState<SubContent>(translated ? (last.content ?? mode) : "original");
+  const [content, setContent] = useState<SubContent>(translated ? (last.content ?? defaultContent) : "original");
   const [map, setMap] = useState<TimeMap | null>(null);
   const [onPlay, setOnPlay] = useState(true);
   const [busy, setBusy] = useState(false);

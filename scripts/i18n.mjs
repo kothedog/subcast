@@ -2,12 +2,12 @@
 //   node scripts/i18n.mjs            report unwrapped Chinese strings and missing / unused entries
 //   node scripts/i18n.mjs --keys     print every key as JSON (for translating)
 //   node scripts/i18n.mjs --strict   exit 1 when anything is missing (for CI)
-import { readFileSync, readdirSync, statSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 
 const root = new URL("..", import.meta.url).pathname;
 const CJK = /[\u3400-\u9fff]/;
-const walk = (dir) => readdirSync(dir).flatMap((f) => { const p = join(dir, f); return statSync(p).isDirectory() ? walk(p) : [p]; });
+const walk = (dir) => (existsSync(dir) ? readdirSync(dir).flatMap((f) => { const p = join(dir, f); return statSync(p).isDirectory() ? walk(p) : [p]; }) : []);
 const front = walk(join(root, "src")).filter((f) => /\.(tsx?)$/.test(f) && !f.includes("/locales/"));
 const unescape = (s) => s.replace(/\\n/g, "\n").replace(/\\"/g, '"').replace(/\\`/g, "`").replace(/\\\\/g, "\\");
 
@@ -41,10 +41,17 @@ for (const file of front) {
 
 // Rust messages that reach the screen. Tests, SQL, regexes and proper names stay out.
 const RUST_SKIP = /INSERT |^章节：\{\}$|^\[\\w|\(\?i\)|感谢观看|谢谢观看|请不吝点赞|字幕by|字幕由|^ · 文稿$/;
-for (const file of walk(join(root, "src-tauri/src")).filter((f) => f.endsWith(".rs"))) {
+const rustFiles = [
+  ...walk(join(root, "src-tauri/src")),
+  ...walk(join(root, "crates/subcast-core/src")),
+].filter((f) => f.endsWith(".rs"));
+for (const file of rustFiles) {
   const src = readFileSync(file, "utf8").split("#[cfg(test)]")[0];
+  let skipping = false;
   for (const line of src.split("\n")) {
-    if (/^\s*\/\//.test(line) || /title_for|cover_for|=> "/.test(line) || line.includes("i18n-ignore")) continue;
+    if (line.includes("i18n-ignore-start")) skipping = true;
+    if (line.includes("i18n-ignore-end")) { skipping = false; continue; }
+    if (skipping || /^\s*\/\//.test(line) || /title_for|cover_for|=> "/.test(line) || line.includes("i18n-ignore")) continue;
     for (const m of line.matchAll(/"((?:[^"\\]|\\.)*[\u3400-\u9fff](?:[^"\\]|\\.)*)"/g)) if (!RUST_SKIP.test(m[1])) add(unescape(m[1]), relative(root, file));
   }
 }

@@ -4,7 +4,7 @@
 //    (src-tauri/src/shadow.rs) about once a second while they speak, the words they got light up, and the next
 //    sentence plays once enough of them were said. Three misses in a row and it moves on anyway.
 //  - 定时停顿: the old way, a pause about as long as the sentence, without a microphone.
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { create } from "zustand";
 import { listen } from "@tauri-apps/api/event";
 import { Check, Mic, MicOff, RotateCcw, SkipForward, Volume2 } from "lucide-react";
@@ -31,8 +31,11 @@ interface Shadow {
   silent: boolean;
   said: number;
   scoreSum: number;
+  /** Timed pause countdown: total ms and end timestamp. */
+  waitTotal: number;
+  waitUntil: number;
 }
-const initial: Shadow = { phase: "playing", piece: null, words: null, level: 0, tries: 0, fallback: null, silent: false, said: 0, scoreSum: 0 };
+const initial: Shadow = { phase: "playing", piece: null, words: null, level: 0, tries: 0, fallback: null, silent: false, said: 0, scoreSum: 0, waitTotal: 0, waitUntil: 0 };
 export const useShadow = create<Shadow>(() => initial);
 
 /** Louder than this counts as speaking. */
@@ -159,9 +162,10 @@ export function useShadowing(on: boolean, epId: string, segments: Segment[], lan
       s.player?.toggle();
       useShadow.setState({ piece: p, tries: 0, words: null });
       if (scoring && !useShadow.getState().fallback) { newTurn(); return; }
-      useShadow.setState({ phase: "waiting" });
       const gap = Math.min(12, Math.max(1.5, (p.end - p.start) * 1.1 + 0.6));
-      resume = window.setTimeout(() => { if (alive && useShadow.getState().phase === "waiting") next(); }, gap * 1000);
+      const ms = Math.round(gap * 1000);
+      useShadow.setState({ phase: "waiting", waitTotal: ms, waitUntil: Date.now() + ms });
+      resume = window.setTimeout(() => { if (alive && useShadow.getState().phase === "waiting") next(); }, ms);
     });
 
     // The buttons in the bar.
@@ -195,14 +199,23 @@ let controls: { again: () => void; replay: () => void; skip: () => void } | null
 
 export function ShadowBar({ onExit }: { onExit: () => void }) {
   useLang((s) => s.lang);
-  const { phase, piece, words, level, tries, fallback, silent, said, scoreSum } = useShadow();
+  const { phase, piece, words, level, tries, fallback, silent, said, scoreSum, waitTotal, waitUntil } = useShadow();
   const score = useStore((s) => s.settings.shadowScore !== false);
   const save = useStore((s) => s.saveSettings);
   const scoring = score && !fallback;
   const lastPhase = useRef(phase);
   lastPhase.current = phase;
+  const [waitLeft, setWaitLeft] = useState(0);
+  useEffect(() => {
+    if (phase !== "waiting" || !waitUntil) { setWaitLeft(0); return; }
+    const update = () => setWaitLeft(Math.max(0, waitUntil - Date.now()));
+    update();
+    const id = window.setInterval(update, 100);
+    return () => window.clearInterval(id);
+  }, [phase, waitUntil]);
+  const waitPct = waitTotal > 0 ? Math.min(100, Math.max(0, (waitLeft / waitTotal) * 100)) : 0;
   const status =
-    !scoring ? t("跟读模式：每句说完会停一下，跟着说一遍")
+    !scoring ? (phase === "waiting" ? t("轮到你了，跟着说一遍（{s}s 后继续）", { s: Math.max(1, Math.ceil(waitLeft / 1000)) }) : t("跟读模式：每句说完会停一下，跟着说一遍"))
     : phase === "listening" ? t("轮到你了，跟着说这一句")
     : phase === "passed" ? t("说得好")
     : phase === "missed" ? (tries >= MAX_TRIES ? t("先往下听，之后再回来练") : t("还差一点，再说一遍，或者重听原句"))
@@ -223,6 +236,16 @@ export function ShadowBar({ onExit }: { onExit: () => void }) {
             <span key={i} className={w.ok ? "ok" : phase === "missed" || (phase === "passed" && words) ? "miss" : ""}>{w.word} </span>
           ))}
         </p>
+      )}
+      {!scoring && piece && phase === "waiting" && (
+        <>
+          <p className="shadow-line">{piece.text}</p>
+          <div className="shadow-wait-bar" aria-hidden><span style={{ width: `${waitPct}%` }} /></div>
+          <div className="shadow-actions">
+            <button className="btn ghost sm" onClick={() => controls?.replay()}><Volume2 size={13} /> {t("重听原句")}</button>
+            <button className="btn ghost sm" onClick={() => controls?.skip()}><SkipForward size={13} /> {t("下一句")}</button>
+          </div>
+        </>
       )}
       {scoring && piece && (phase === "missed" || phase === "listening") && (
         <div className="shadow-actions">

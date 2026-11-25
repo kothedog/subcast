@@ -1,11 +1,12 @@
-import { lazy, Suspense, useEffect, useRef, useState } from "react";
-import { Copy, Image as ImageIcon, Languages, Loader2, Scissors } from "lucide-react";
+import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { Check, Copy, Image as ImageIcon, Languages, Loader2, Scissors } from "lucide-react";
 import { api, type Episode } from "../lib/api";
 import { createManualClip } from "../lib/highlights";
 import { useJobs } from "../lib/jobs";
 import { CJK } from "../lib/zh";
 import { showName } from "../lib/picks";
 import { useStore } from "../store";
+import { useClipTools } from "../lib/clipTools";
 import { t } from "../lib/i18n";
 import { openVideoClipDialog } from "./VideoClipDialog";
 
@@ -19,7 +20,10 @@ interface Sel { text: string; x: number; y: number; below: boolean; ts?: string;
 export function SelectionTools() {
   const [sel, setSel] = useState<Sel | null>(null);
   const [tr, setTr] = useState<string | null>(null);
+  const [trCopied, setTrCopied] = useState(false);
   const [poster, setPoster] = useState<{ text: string; ts?: string } | null>(null);
+  const barRef = useRef<HTMLDivElement>(null);
+  const [clampedX, setClampedX] = useState<number | null>(null);
   const view = useStore((s) => s.view);
   const current = useStore((s) => s.current);
   const [hasVideo, setHasVideo] = useState(false);
@@ -51,12 +55,39 @@ export function SelectionTools() {
       const endIdx = Number.isFinite(sRaw) ? Math.max(sRaw, Number.isFinite(eRaw) ? eRaw : sRaw) : undefined;
       const below = rect.top < 70;
       setTr(null);
-      setSel({ text, x: Math.max(8, Math.min(rect.left + rect.width / 2, innerWidth - 8)), y: below ? rect.bottom + 10 : rect.top - 10, below, ts, startIdx, endIdx });
+      setTrCopied(false);
+      setClampedX(null);
+      setSel({ text, x: Math.max(12, Math.min(rect.left + rect.width / 2, innerWidth - 12)), y: below ? rect.bottom + 10 : rect.top - 10, below, ts, startIdx, endIdx });
     };
     const onChange = () => { window.clearTimeout(timer.current); timer.current = window.setTimeout(read, 220); };
     document.addEventListener("selectionchange", onChange);
     return () => document.removeEventListener("selectionchange", onChange);
   }, []);
+
+  useEffect(() => {
+    if (!sel) return;
+    const hide = (e: Event) => {
+      if (e.type === "scroll" && barRef.current?.contains(e.target as Node)) return;
+      setSel(null);
+      setTr(null);
+    };
+    window.addEventListener("scroll", hide, true);
+    window.addEventListener("resize", hide);
+    return () => {
+      window.removeEventListener("scroll", hide, true);
+      window.removeEventListener("resize", hide);
+    };
+  }, [sel]);
+
+  useLayoutEffect(() => {
+    if (!sel || !barRef.current) return;
+    const w = barRef.current.offsetWidth;
+    if (!w) return;
+    const pad = 12;
+    const half = w / 2;
+    const next = Math.max(pad + half, Math.min(sel.x, window.innerWidth - pad - half));
+    if (Math.abs((clampedX ?? sel.x) - next) > 1) setClampedX(next);
+  }, [sel, tr, clampedX]);
 
   const episode = async (): Promise<Episode | null> => {
     const { view, current } = useStore.getState();
@@ -76,6 +107,7 @@ export function SelectionTools() {
     catch { setTr(t("翻译服务暂时连不上，稍后再试")); }
   };
 
+  const clipTools = useClipTools();
   const clipVideo = async () => {
     if (!sel || sel.startIdx == null) return;
     const ep = await episode();
@@ -89,19 +121,40 @@ export function SelectionTools() {
     openVideoClipDialog({ ep, segments: trData.segments, zh: zhItems, clip });
   };
 
+  const copyTr = async () => {
+    if (!tr || tr === "…") return;
+    try {
+      await navigator.clipboard.writeText(tr);
+      setTrCopied(true);
+      window.setTimeout(() => setTrCopied(false), 1500);
+      useStore.getState().notify(t("已复制"));
+    } catch { useStore.getState().notify(t("复制失败")); }
+  };
+
   return (
     <>
       {sel && (
-        <div className={`sel-bar ${sel.below ? "below" : ""}`} style={{ left: sel.x, top: sel.y }} role="toolbar" aria-label={t("选中文字操作")} onMouseDown={(e) => e.preventDefault()}>
-          <div className="sel-actions">
+        <div ref={barRef} className={`sel-bar ${sel.below ? "below" : ""}`} style={{ left: clampedX ?? sel.x, top: sel.y }} role="toolbar" aria-label={t("选中文字操作")}>
+          <div className="sel-actions" onMouseDown={(e) => e.preventDefault()}>
             <button onClick={copy}><Copy size={13} /> {t("复制")}</button>
             <button onClick={translate}><Languages size={13} /> {t("翻译")}</button>
             <button onClick={() => { setPoster({ text: sel.text, ts: sel.ts }); setSel(null); }}><ImageIcon size={13} /> {t("生成海报")}</button>
-            {hasVideo && sel.startIdx != null && (
+            {clipTools && hasVideo && sel.startIdx != null && (
               <button onClick={() => void clipVideo()}><Scissors size={13} /> {t("剪视频")}</button>
             )}
           </div>
-          {tr && <div className="sel-tr">{tr === "…" ? <Loader2 size={13} className="spin" /> : tr}</div>}
+          {tr && (
+            <div className="sel-tr">
+              {tr === "…" ? <Loader2 size={13} className="spin" /> : (
+                <>
+                  <span>{tr}</span>
+                  <button type="button" className="icon-btn sm sel-tr-copy" title={t("复制")} aria-label={t("复制")} onClick={() => void copyTr()}>
+                    {trCopied ? <Check size={12} /> : <Copy size={12} />}
+                  </button>
+                </>
+              )}
+            </div>
+          )}
         </div>
       )}
       {poster && (

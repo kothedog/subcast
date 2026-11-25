@@ -52,17 +52,26 @@ export interface Settings {
   subtitleOrigScale?: number;
   /** How far video subtitles are moved up from their usual place, in % of the picture's height (dragged). */
   subtitleLift?: number;
+  /** Old two-step size; `chatScale` replaces it once the slider moves. */
   chatSize?: "m" | "l";
+  /** AI answers and guides text size, 0.85–1.5 (1 = 14px). */
+  chatScale?: number;
   audioNextLine?: boolean;
   skipBack?: number;
   skipForward?: number;
   autoNext?: boolean;
+  /** Show highlights and clip-making (unset: shown). */
+  clipTools?: boolean;
+  /** The one-time offer to connect AI agents to SubCast was answered (or done from settings). */
+  agentsOffered?: boolean;
   /** Skip what only the playing audio has when the subtitles were made from another cut (ads, mostly). */
   skipAds?: boolean;
   shortcuts?: Partial<Record<import("./shortcuts").ActionId, string[]>>;
   /** The local agent SubCast switched in on its own (shown as such in settings). */
   autoPicked?: string;
-  subtitleMode: "bilingual" | "original" | "translation";
+  subtitleMode: SubtitleMode;
+  /** Per-show (or standalone episode) subtitle display preference; overrides `subtitleMode` when set. */
+  showSubtitleModes?: Record<string, SubtitleMode>;
   playbackRate: number;
   /** "local", or the id of a cloud transcription service. */
   asrEngine: string;
@@ -88,6 +97,8 @@ export interface Settings {
   youtubePromo: boolean;
   /** Show subscribed shows under their Chinese names (curated or machine-translated) in a Chinese interface. */
   translateShowNames: boolean;
+  /** User-defined custom display names per show id. */
+  showAliases?: Record<string, string>;
   /** Download new versions in the background; they install on the next restart. */
   autoUpdate: boolean;
   /** The Discover banner for our own show was closed by the user. */
@@ -416,7 +427,7 @@ export const DEFAULTS: Settings = {
   quickPrompts: null,
   uiLang: "auto",
   youtubePromo: true,
-  translateShowNames: true,
+  translateShowNames: false,
   autoUpdate: true,
   homeBannerHidden: false,
   sideCurated: true,
@@ -466,6 +477,35 @@ export async function loadSettings(): Promise<Settings> {
   }
   if (!ttsServices[ttsEngine]) ttsEngine = "system";
   return migrate({ ...DEFAULTS, ...raw, providers, cloudAsr, ttsEngine, ttsServices });
+}
+
+export type SubtitleMode = "bilingual" | "original" | "translation" | "off";
+
+export function subtitleModeKey(ep?: { id: string; showId?: string | null } | null): string | null {
+  if (!ep) return null;
+  return ep.showId && ep.showId !== "single" ? ep.showId : ep.id;
+}
+
+/** Resolves the effective subtitle display mode for a show/episode, falling back to the global default. */
+export function subtitleModeFor(settings: Settings, ep?: { id: string; showId?: string | null } | null): SubtitleMode {
+  const key = subtitleModeKey(ep);
+  return (key && settings.showSubtitleModes?.[key]) || settings.subtitleMode;
+}
+
+/** Builds a Settings patch that persists a per-show subtitle mode (or global default when `ep` is absent). */
+export function subtitleModePatch(settings: Settings, ep: { id: string; showId?: string | null } | null | undefined, mode: SubtitleMode): Partial<Settings> {
+  const key = subtitleModeKey(ep);
+  if (!key) return { subtitleMode: mode };
+  return { showSubtitleModes: { ...(settings.showSubtitleModes ?? {}), [key]: mode } };
+}
+
+/** Builds a Settings patch that sets or clears (when blank) a custom display name for a subscribed show. */
+export function showAliasPatch(settings: Settings, showId: string, rawName: string): Partial<Settings> {
+  const next = { ...(settings.showAliases ?? {}) };
+  const clean = rawName.trim();
+  if (clean) next[showId] = clean;
+  else delete next[showId];
+  return { showAliases: next };
 }
 
 /** 0.2.6 removed several switches; carry what each one meant into what remains. Idempotent. */

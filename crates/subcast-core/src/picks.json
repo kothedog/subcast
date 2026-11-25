@@ -1,0 +1,864 @@
+[
+  {
+    "id": "nexttoken",
+    "title": "Next Token｜词元之外",
+    "zh": "词元之外",
+    "by": "Next Token",
+    "intro": "AI 圈一线从业者的长对谈",
+    "input": "https://rss.qiaomu.ai/sources/nexttoken",
+    "cover": "https://image.xyzcdn.net/FhuQBR26B-8jsdfuZumu54mCylqG.png@small",
+    "topics": [
+      "乔木精读",
+      "中文播客",
+      "AI 前沿"
+    ],
+    "deep": true
+  },
+  {
+    "id": "dwarkesh",
+    "title": "Dwarkesh Podcast",
+    "zh": "Dwarkesh 播客",
+    "by": "Dwarkesh Patel",
+    "intro": "深度访谈 AI 实验室负责人与顶尖研究者，硬核又好懂",
+    "input": "https://www.youtube.com/@DwarkeshPatel",
+    "cover": "https://is1-ssl.mzstatic.com/image/thumb/Podcasts211/v4/af/6f/48/af6f4828-86a2-d4c3-b998-de2af1fdc8c0/mza_949624848217027907.jpg/600x600bb.jpg",
+    "topics": [
+      "AI 前沿"
+    ],
+    "video": true
+  },
+  {
+    "id": "no-priors",
+    "title": "No Priors",
+    "zh": "无先验",
+    "by": "Sarah Guo & Elad Gil",
+    "intro": "两位顶级投资人对话 AI 公司创始人",
+    "input": "https://nopriors.qiaomu.ai",
+    "cover": "https://is1-ssl.mzstatic.com/image/thumb/Podcasts221/v4/8f/46/88/8f4688ec-087f-28a1-7f6d-0d401d2e8a00/mza_14043856542292072583.jpg/600x600bb.jpg",
+    "topics": [
+      "乔木精读",
+      "AI 前沿",
+      "创业投资"
+    ],
+    "deep": true
+  },
+  {
+    "id": "lex",
+    "title": "Lex Fridman Podcast",
+    "zh": "Lex Fridman 播客",
+    "by": "Lex Fridman",
+    "intro": "科技、科学与人物的长篇对谈",
+    "input": "https://lex.qiaomu.ai",
+    "cover": "https://is1-ssl.mzstatic.com/image/thumb/Podcasts211/v4/ea/42/d7/ea42d7b1-8d4e-dd97-da5d-c508756550ca/mza_16782152345430036863.jpg/600x600bb.jpg",
+    "topics": [
+      "乔木精读",
+      "科技评论",
+      "AI 前沿"
+    ],
+    "video": true,
+    "deep": true
+  },
+  {
+    "id": "cognitive",
+    "title": "The Cognitive Revolution",
+    "zh": "认知革命",
+    "by": "Nathan Labenz",
+    "intro": "每周拆解最新 AI 进展与应用",
+    "input": "https://cogrev.qiaomu.ai",
+    "cover": "https://is1-ssl.mzstatic.com/image/thumb/Podcasts211/v4/b1/29/0d/b1290dd6-516c-bc2d-53b6-473d18a3dff2/mza_6540782963388625071.jpeg/600x600bb.jpg",
+    "topics": [
+      "乔木精读",
+      "AI 前沿"
+    ],
+    "deep": true
+  },
+  {
+    "id": "ai-daily",
+    "title": "The AI Daily Brief",
+    "zh": "AI 每日简报",
+    "by": "Nathaniel Whittemore",
+    "intro": "每天 20 分钟，跟上 AI 新闻",
+    "input": "https://anchor.fm/s/f7cac464/podcast/rss",
+    "cover": "https://is1-ssl.mzstatic.com/image/thumb/Podcasts211/v4/9c/78/d8/9c78d82d-a2d1-a026-6ca2-f92ea61be9ae/mza_18421328158594577747.jpg/600x600bb.jpg",
+    "topics": [
+      "AI 前沿"
+    ]
+  },
+  {
+    "id": "latent-space",
+    "title": "Latent Space",
+    "zh": "潜空间",
+    "by": "swyx & Alessio",
+    "intro": "写给 AI 工程师的一线实践与工具",
+    "input": "https://rss.qiaomu.ai/sources/latentspace",
+    "cover": "https://is1-ssl.mzstatic.com/image/thumb/Podcasts221/v4/5c/7d/2a/5c7d2ade-4458-04e8-9838-979d187712ed/mza_16100858243175777898.jpg/600x600bb.jpg",
+    "topics": [
+      "乔木精读",
+      "AI 工程"
+    ],
+    "deep": true
+  },
+  {
+    "id": "training-data",
+    "title": "Training Data",
+    "zh": "训练数据",
+    "by": "Sequoia Capital",
+    "intro": "红杉资本对话 AI 创业者",
+    "input": "https://trainingdata.qiaomu.ai",
+    "cover": "https://is1-ssl.mzstatic.com/image/thumb/Podcasts221/v4/40/01/bd/4001bd05-9453-3d7f-c034-d815c74d332d/mza_6464974713460854089.png/600x600bb.jpg",
+    "topics": [
+      "乔木精读",
+      "创业投资",
+      "AI 工程"
+    ],
+    "deep": true
+  },
+  {
+    "id": "yc",
+    "title": "Y Combinator",
+    "zh": "Y Combinator",
+    "by": "YC",
+    "intro": "全球顶级孵化器的创业课与创始人访谈",
+    "input": "https://www.youtube.com/@ycombinator",
+    "cover": "https://is1-ssl.mzstatic.com/image/thumb/Podcasts221/v4/65/d1/1e/65d11ed6-914f-e163-bc7a-d1ea5eda5b79/mza_2184580866640883071.jpg/600x600bb.jpg",
+    "topics": [
+      "创业投资"
+    ],
+    "video": true
+  },
+  {
+    "id": "a16z",
+    "title": "The a16z Show",
+    "zh": "a16z 播客",
+    "by": "Andreessen Horowitz",
+    "intro": "硅谷头部基金看科技与未来",
+    "input": "https://feeds.simplecast.com/JGE3yC0V",
+    "cover": "https://is1-ssl.mzstatic.com/image/thumb/Podcasts221/v4/3e/04/91/3e049169-5b95-784c-2197-01cfff9f41eb/mza_10026788811025472218.jpg/600x600bb.jpg",
+    "topics": [
+      "创业投资",
+      "科技评论"
+    ]
+  },
+  {
+    "id": "20vc",
+    "title": "The Twenty Minute VC",
+    "zh": "20 分钟 VC",
+    "by": "Harry Stebbings",
+    "intro": "风投与创业者的快节奏对话",
+    "input": "https://rss.libsyn.com/shows/61840/destinations/240976.xml",
+    "cover": "https://is1-ssl.mzstatic.com/image/thumb/Podcasts221/v4/cb/4a/f9/cb4af9a2-5857-c3f1-30d4-14395af9a14f/mza_11350890235230424535.jpeg/600x600bb.jpg",
+    "topics": [
+      "创业投资"
+    ]
+  },
+  {
+    "id": "lenny",
+    "title": "Lenny's Podcast",
+    "zh": "Lenny 播客",
+    "by": "Lenny Rachitsky",
+    "intro": "产品、增长与职业成长的实战经验",
+    "input": "https://api.substack.com/feed/podcast/10845.rss",
+    "cover": "https://is1-ssl.mzstatic.com/image/thumb/Podcasts211/v4/c7/80/a3/c780a365-a1ed-527f-365f-1bd3e51ac6d1/mza_5908526734339724450.jpg/600x600bb.jpg",
+    "topics": [
+      "产品与增长"
+    ]
+  },
+  {
+    "id": "acquired",
+    "title": "Acquired",
+    "zh": "收购",
+    "by": "Ben Gilbert & David Rosenthal",
+    "intro": "讲透一家伟大公司的完整故事",
+    "input": "https://rss.qiaomu.ai/sources/podscribe-acquired",
+    "cover": "https://is1-ssl.mzstatic.com/image/thumb/Podcasts211/v4/a8/e1/de/a8e1deff-9f88-4e55-a541-b0dc793c0cdc/mza_11539673419613154037.jpg/600x600bb.jpg",
+    "topics": [
+      "乔木精读",
+      "科技评论",
+      "创业投资"
+    ],
+    "deep": true
+  },
+  {
+    "id": "hard-fork",
+    "title": "Hard Fork",
+    "zh": "硬分叉",
+    "by": "The New York Times",
+    "intro": "《纽约时报》每周科技评论",
+    "input": "https://feeds.simplecast.com/6HKOhNgS",
+    "cover": "https://is1-ssl.mzstatic.com/image/thumb/Podcasts221/v4/de/c5/20/dec52092-6be0-9007-875c-6aa8e690a905/mza_12490014444602578825.jpg/600x600bb.jpg",
+    "topics": [
+      "科技评论"
+    ]
+  },
+  {
+    "id": "decoder",
+    "title": "Decoder with Nilay Patel",
+    "zh": "解码者",
+    "by": "The Verge",
+    "intro": "与 CEO 们聊组织、决策与科技产业",
+    "input": "https://feeds.megaphone.fm/recodedecode",
+    "cover": "https://is1-ssl.mzstatic.com/image/thumb/Podcasts211/v4/45/b2/ea/45b2ea67-03e4-2eb9-b333-fdcd9ead3f80/mza_1465024791640209731.jpg/600x600bb.jpg",
+    "topics": [
+      "科技评论",
+      "产品与增长"
+    ]
+  },
+  {
+    "id": "zhang",
+    "title": "张小珺Jùn｜商业访谈录",
+    "zh": "张小珺｜商业访谈录",
+    "by": "张小珺",
+    "intro": "与中国科技、商业一线人物的长访谈",
+    "input": "https://zhangxiaojun.qiaomu.ai",
+    "cover": "https://is1-ssl.mzstatic.com/image/thumb/Podcasts221/v4/e6/74/44/e674449c-c2ac-50c4-0099-7e37c330e6c5/mza_16442776193352459849.png/600x600bb.jpg",
+    "topics": [
+      "乔木精读",
+      "中文播客",
+      "AI 前沿"
+    ],
+    "deep": true
+  },
+  {
+    "id": "sv101",
+    "title": "硅谷101",
+    "zh": "硅谷101",
+    "by": "泓君",
+    "intro": "硅谷科技、创业与人物的深度访谈",
+    "input": "https://feeds.fireside.fm/sv101/rss",
+    "cover": "https://is1-ssl.mzstatic.com/image/thumb/Podcasts126/v4/96/d6/82/96d682e0-e42f-d8bf-68c3-c18ff9c20c8f/mza_15727650922171364471.jpg/600x600bb.jpg",
+    "topics": [
+      "中文播客",
+      "科技评论"
+    ]
+  },
+  {
+    "id": "latetalk",
+    "title": "晚点聊 LateTalk",
+    "zh": "晚点聊 LateTalk",
+    "by": "晚点 LatePost",
+    "intro": "《晚点》记者与创业者、投资人的对话",
+    "input": "https://latetalk.qiaomu.ai",
+    "cover": "https://is1-ssl.mzstatic.com/image/thumb/Podcasts211/v4/79/f3/66/79f366d3-dfb2-4c6e-ade6-e95e18261c4f/mza_6811336372335437524.jpg/600x600bb.jpg",
+    "topics": [
+      "乔木精读",
+      "中文播客",
+      "创业投资"
+    ],
+    "deep": true
+  },
+  {
+    "id": "42",
+    "title": "42章经",
+    "zh": "42章经",
+    "by": "曲凯",
+    "intro": "创投圈的思考与方法论",
+    "input": "https://42zhangjing.qiaomu.ai",
+    "cover": "https://is1-ssl.mzstatic.com/image/thumb/Podcasts126/v4/33/6c/3f/336c3fea-4e5a-9524-6b7d-92c1080a6db9/mza_9247514814536235437.png/600x600bb.jpg",
+    "topics": [
+      "乔木精读",
+      "中文播客",
+      "创业投资"
+    ],
+    "deep": true
+  },
+  {
+    "id": "banlatie",
+    "title": "半拿铁 | 商业沉浮录",
+    "zh": "半拿铁｜商业沉浮录",
+    "by": "潇磊 & 刘飞",
+    "intro": "轻松好听的商业故事",
+    "input": "https://rss.qiaomu.ai/sources/bannatie",
+    "cover": "https://is1-ssl.mzstatic.com/image/thumb/Podcasts112/v4/95/33/4d/95334de1-1492-1ab0-aa7b-8f246bf89bde/mza_10728614257690800956.jpeg/600x600bb.jpg",
+    "topics": [
+      "乔木精读",
+      "中文播客"
+    ],
+    "deep": true
+  },
+  {
+    "id": "allin",
+    "title": "All-In Podcast",
+    "zh": "All-In 播客",
+    "by": "Chamath, Jason, Sacks & Friedberg",
+    "intro": "硅谷四位投资人每周聊科技、商业与政策",
+    "input": "https://allin.qiaomu.ai",
+    "cover": "https://is1-ssl.mzstatic.com/image/thumb/Podcasts124/v4/c7/d2/92/c7d292ea-44b3-47ff-2f5e-74fa5b23db6c/mza_7005270671777648882.png/600x600bb.jpg",
+    "topics": [
+      "乔木精读",
+      "创业投资"
+    ],
+    "video": true,
+    "deep": true
+  },
+  {
+    "id": "unsupervised",
+    "title": "Unsupervised Learning",
+    "zh": "无监督学习",
+    "by": "Redpoint · Jacob Effron",
+    "intro": "红点创投对话 AI 研究者与创业者",
+    "input": "https://unsupervised.qiaomu.ai",
+    "cover": "https://is1-ssl.mzstatic.com/image/thumb/Podcasts221/v4/89/9c/aa/899caaef-e537-c9e8-2e34-788b847b1a15/mza_3258716992355382594.jpg/600x600bb.jpg",
+    "topics": [
+      "乔木精读",
+      "AI 前沿"
+    ],
+    "deep": true
+  },
+  {
+    "id": "crossing",
+    "title": "十字路口Crossing",
+    "zh": "十字路口",
+    "by": "Koji & Ronghui",
+    "intro": "AI 创业者与产品人的深度对话",
+    "input": "https://crossing.qiaomu.ai",
+    "cover": "https://is1-ssl.mzstatic.com/image/thumb/Podcasts211/v4/d8/14/eb/d814eb12-0a75-e0b4-33a1-c6a2dae2b516/mza_4023160414676912809.png/600x600bb.jpg",
+    "topics": [
+      "乔木精读",
+      "中文播客"
+    ],
+    "deep": true
+  },
+  {
+    "id": "aialchemy",
+    "title": "AI炼金术",
+    "zh": "AI炼金术",
+    "by": "AI炼金术",
+    "intro": "聊 AI 应用、产品与创业实战",
+    "input": "https://aialchemy.qiaomu.ai",
+    "cover": "https://is1-ssl.mzstatic.com/image/thumb/Podcasts116/v4/ad/47/1f/ad471f3e-01ad-b68e-772e-6904f6af6941/mza_15665975703352948829.jpeg/600x600bb.jpg",
+    "topics": [
+      "乔木精读",
+      "中文播客"
+    ],
+    "deep": true
+  },
+  {
+    "id": "35huan",
+    "title": "三五环",
+    "zh": "三五环",
+    "by": "刘飞",
+    "intro": "互联网产品与商业观察",
+    "input": "https://35huan.qiaomu.ai",
+    "cover": "https://is1-ssl.mzstatic.com/image/thumb/Podcasts126/v4/6e/d0/de/6ed0dedb-d782-a562-e40b-043ce20441d3/mza_5066303992234991879.jpeg/600x600bb.jpg",
+    "topics": [
+      "乔木精读",
+      "中文播客"
+    ],
+    "deep": true
+  },
+  {
+    "id": "zhixing",
+    "title": "知行小酒馆",
+    "zh": "知行小酒馆",
+    "by": "有知有行",
+    "intro": "投资理财与人生选择",
+    "input": "https://zhixing.qiaomu.ai",
+    "cover": "https://is1-ssl.mzstatic.com/image/thumb/Podcasts112/v4/b3/96/fc/b396fcc5-6e2b-d34e-8d3d-c849c43b6215/mza_4090324763067558601.jpeg/600x600bb.jpg",
+    "topics": [
+      "乔木精读",
+      "中文播客"
+    ],
+    "deep": true
+  },
+  {
+    "id": "mianji",
+    "title": "面基",
+    "zh": "面基",
+    "by": "面基",
+    "intro": "和有意思的人见面聊天",
+    "input": "https://mianji.qiaomu.ai",
+    "cover": "https://is1-ssl.mzstatic.com/image/thumb/Podcasts126/v4/a8/d9/5e/a8d95e6e-aba6-3608-9c28-8b8cde840ec4/mza_10150483960934463526.png/600x600bb.jpg",
+    "topics": [
+      "乔木精读",
+      "中文播客"
+    ],
+    "deep": true
+  },
+  {
+    "id": "joerogan",
+    "title": "The Joe Rogan Experience",
+    "zh": "乔·罗根秀",
+    "by": "Joe Rogan",
+    "intro": "全球收听量最高的长篇访谈",
+    "input": "https://www.youtube.com/@joerogan",
+    "cover": "https://is1-ssl.mzstatic.com/image/thumb/Podcasts211/v4/d8/97/bf/d897bfdd-73ea-6a4e-5c3e-02ab30707f2b/mza_8607972238001778397.jpg/600x600bb.jpg",
+    "topics": [
+      "科技评论"
+    ],
+    "video": true
+  },
+  {
+    "id": "80k",
+    "title": "80,000 Hours Podcast",
+    "zh": "八万小时",
+    "by": "80,000 Hours",
+    "intro": "关于 AI 风险与人生选择的深度访谈",
+    "input": "https://feeds.transistor.fm/80000-hours-podcast",
+    "cover": "https://is1-ssl.mzstatic.com/image/thumb/Podcasts221/v4/1e/ca/c2/1ecac2c7-a567-01ee-8bbe-80145ef185e3/mza_1975528560600666532.jpg/600x600bb.jpg",
+    "topics": [
+      "AI 前沿"
+    ]
+  },
+  {
+    "id": "pivot",
+    "title": "Pivot",
+    "zh": "Pivot",
+    "by": "Kara Swisher & Scott Galloway",
+    "intro": "两位科技评论人每周辣评科技与商业",
+    "input": "https://rss.qiaomu.ai/sources/podscribe-pivot",
+    "cover": "https://is1-ssl.mzstatic.com/image/thumb/Podcasts221/v4/13/22/39/1322397a-976e-3c8f-7764-91cc38d0dd70/mza_12130189257448841692.jpeg/600x600bb.jpg",
+    "topics": [
+      "乔木精读",
+      "科技评论"
+    ],
+    "deep": true
+  },
+  {
+    "id": "freakonomics",
+    "title": "Freakonomics Radio",
+    "zh": "魔鬼经济学",
+    "by": "Stephen Dubner",
+    "intro": "用经济学眼光看日常世界",
+    "input": "https://rss.qiaomu.ai/sources/podscribe-freakonomics-radio",
+    "cover": "https://is1-ssl.mzstatic.com/image/thumb/Podcasts115/v4/f7/0c/c5/f70cc540-ce36-d96f-b111-c970aad5505c/mza_17703422762227531425.jpg/600x600bb.jpg",
+    "topics": [
+      "乔木精读",
+      "科技评论"
+    ],
+    "deep": true
+  },
+  {
+    "id": "iltb",
+    "title": "Invest Like the Best",
+    "zh": "像最好的投资人一样",
+    "by": "Patrick O'Shaughnessy",
+    "intro": "顶级投资人与创业者的方法论",
+    "input": "https://rss.qiaomu.ai/sources/podscribe-invest-like-the-best",
+    "cover": "https://is1-ssl.mzstatic.com/image/thumb/Podcasts211/v4/61/ae/be/61aebe7a-06e8-7390-3ae5-f2fc5889e36c/mza_10827489189939068066.jpg/600x600bb.jpg",
+    "topics": [
+      "乔木精读",
+      "创业投资"
+    ],
+    "deep": true
+  },
+  {
+    "id": "doac",
+    "title": "The Diary Of A CEO",
+    "zh": "CEO 日记",
+    "by": "Steven Bartlett",
+    "intro": "创业者、科学家与名人的人生故事",
+    "input": "https://rss.qiaomu.ai/sources/podscribe-the-diary-of-a-ceo-with-steven-bartlett",
+    "cover": "https://is1-ssl.mzstatic.com/image/thumb/Podcasts221/v4/69/af/0d/69af0ddd-1e0f-7ae3-c84b-88f18e31ad0c/mza_14445920128472365296.png/600x600bb.jpg",
+    "topics": [
+      "乔木精读",
+      "产品与增长"
+    ],
+    "deep": true
+  },
+  {
+    "id": "builders",
+    "title": "The Builders",
+    "zh": "造物者",
+    "by": "Walter Isaacson",
+    "intro": "《乔布斯传》《马斯克传》作者对话 AI 与科技领袖",
+    "input": "https://www.omnycontent.com/d/playlist/e73c998e-6e60-432f-8610-ae210140c5b1/8adeeef5-b6c0-4cfa-b6cc-b4c0011490b1/51d9281c-e886-4139-b940-b4c0011494bc/podcast.rss",
+    "cover": "https://is1-ssl.mzstatic.com/image/thumb/Podcasts221/v4/1a/2e/de/1a2ede66-1775-0875-c938-7f77c0e2ea85/mza_10281795707287482764.jpg/600x600bb.jpg",
+    "topics": [
+      "科技评论",
+      "AI 前沿"
+    ]
+  },
+  {
+    "id": "huzuohuyou",
+    "title": "忽左忽右",
+    "zh": "忽左忽右",
+    "by": "程衍樑、杨一",
+    "intro": "历史与文化的深度漫谈",
+    "input": "https://www.xiaoyuzhoufm.com/podcast/5e4ee557418a84a0466737b7",
+    "cover": "https://image.xyzcdn.net/FrYMqb37Wg_LA8aenDJJ8SFGsjea@middle",
+    "topics": [
+      "中文播客",
+      "人文社科"
+    ]
+  },
+  {
+    "id": "shengdong",
+    "title": "声东击西",
+    "zh": "声东击西",
+    "by": "徐涛",
+    "intro": "看懂世界的变化如何影响我们",
+    "input": "https://www.xiaoyuzhoufm.com/podcast/5e2831ed418a84a046231c00",
+    "cover": "https://is1-ssl.mzstatic.com/image/thumb/Podcasts221/v4/34/fe/fd/34fefd10-2039-380d-7015-dbc28b79f625/mza_7380566725793754773.jpg/600x600bb.jpg",
+    "topics": [
+      "中文播客",
+      "人文社科",
+      "科技评论"
+    ]
+  },
+  {
+    "id": "dongqiang",
+    "title": "东腔西调",
+    "zh": "东腔西调",
+    "by": "大观天下志",
+    "intro": "用学科视角解读日常现象",
+    "input": "https://www.xiaoyuzhoufm.com/podcast/5f72b66083c34e85dd14fde9",
+    "cover": "https://image.xyzcdn.net/FpxwyY2MbF9yjuYez8b4RuCWz0cM@middle",
+    "topics": [
+      "中文播客",
+      "人文社科"
+    ]
+  },
+  {
+    "id": "wenhua",
+    "title": "文化有限",
+    "zh": "文化有限",
+    "by": "文化有限",
+    "intro": "聊书、电影和打动人的作品",
+    "input": "https://www.xiaoyuzhoufm.com/podcast/5e4515bd418a84a046e2b11a",
+    "cover": "https://image.xyzcdn.net/FqnQh1PmNEl9cq-94VGw2LESBOkk@middle",
+    "topics": [
+      "中文播客",
+      "人文社科"
+    ]
+  },
+  {
+    "id": "wurenzhixiao",
+    "title": "无人知晓",
+    "zh": "无人知晓",
+    "by": "孟岩",
+    "intro": "关于投资、人生与自我的真诚对话",
+    "input": "https://www.xiaoyuzhoufm.com/podcast/611719d3cb0b82e1df0ad29e",
+    "cover": "https://image.xyzcdn.net/FrJquLUC5yZR0tQrShVB857O8J8g.jpg@middle",
+    "topics": [
+      "中文播客",
+      "个人成长",
+      "创业投资"
+    ]
+  },
+  {
+    "id": "shangye",
+    "title": "商业就是这样",
+    "zh": "商业就是这样",
+    "by": "第一财经",
+    "intro": "用大白话讲清商业现象",
+    "input": "https://www.xiaoyuzhoufm.com/podcast/6022a180ef5fdaddc30bb101",
+    "cover": "https://image.xyzcdn.net/FriYeatZbUiuUJROx6namDoYNauU@middle",
+    "topics": [
+      "中文播客",
+      "创业投资",
+      "产品与增长"
+    ]
+  },
+  {
+    "id": "qizhulou",
+    "title": "起朱楼宴宾客",
+    "zh": "起朱楼宴宾客",
+    "by": "翁放",
+    "intro": "金融从业者记录大时代的投资观察",
+    "input": "https://www.xiaoyuzhoufm.com/podcast/61dd99a47b29652ff572257b",
+    "cover": "https://image.xyzcdn.net/FvRoerA1wYLr6rDzfeSOhtPAkHn5.png@middle",
+    "topics": [
+      "中文播客",
+      "创业投资"
+    ]
+  },
+  {
+    "id": "luanfanshu",
+    "title": "乱翻书",
+    "zh": "乱翻书",
+    "by": "潘乱",
+    "intro": "科技互联网行业的深度闲聊",
+    "input": "https://www.xiaoyuzhoufm.com/podcast/61358d971c5d56efe5bcb5d2",
+    "cover": "https://image.xyzcdn.net/FqqQkG2Api63iYHz38DWlnFdR-1y.jpg@middle",
+    "topics": [
+      "中文播客",
+      "科技评论",
+      "产品与增长"
+    ]
+  },
+  {
+    "id": "whatsnext",
+    "title": "What's Next｜科技早知道",
+    "zh": "科技早知道",
+    "by": "声动活泼",
+    "intro": "多视角解读科技行业大事件",
+    "input": "https://www.xiaoyuzhoufm.com/podcast/5e74b52c418a84a046ecaceb",
+    "cover": "https://is1-ssl.mzstatic.com/image/thumb/Podcasts116/v4/f8/99/2a/f8992af8-b391-a6e9-72a2-dda4c223ace8/mza_3325716517235553759.jpg/600x600bb.jpg",
+    "topics": [
+      "中文播客",
+      "科技评论",
+      "AI 前沿"
+    ]
+  },
+  {
+    "id": "fengtou",
+    "title": "疯投圈",
+    "zh": "疯投圈",
+    "by": "黄海、Rio",
+    "intro": "投资人视角拆解消费与商业",
+    "input": "https://www.xiaoyuzhoufm.com/podcast/5e280faf418a84a0461fbd39",
+    "cover": "https://is1-ssl.mzstatic.com/image/thumb/Podcasts115/v4/e8/d8/8e/e8d88ed9-b12c-b8d9-5e5d-25682f72c182/mza_4966428153200416701.png/600x600bb.jpg",
+    "topics": [
+      "中文播客",
+      "创业投资"
+    ]
+  },
+  {
+    "id": "houxue",
+    "title": "厚雪长波",
+    "zh": "厚雪长波",
+    "by": "雪球",
+    "intro": "和投资人一起找长期机会",
+    "input": "https://www.xiaoyuzhoufm.com/podcast/646d6bfa53a5e5ea14e69c7c",
+    "cover": "https://image.xyzcdn.net/FokAknFXGctKkcGf_iwIjz0UE2KC.jpeg@middle",
+    "topics": [
+      "中文播客",
+      "创业投资"
+    ]
+  },
+  {
+    "id": "steve",
+    "title": "史蒂夫说",
+    "zh": "史蒂夫说",
+    "by": "史蒂夫",
+    "intro": "拓展认知边界的泛心理播客",
+    "input": "https://www.xiaoyuzhoufm.com/podcast/64379296ff8a107611a67208",
+    "cover": "https://image.xyzcdn.net/Fh9xFfHfI-ezOvKyGW87jwsMA0x2.jpg@middle",
+    "topics": [
+      "中文播客",
+      "个人成长"
+    ]
+  },
+  {
+    "id": "weishijie",
+    "title": "卫诗婕｜漫谈Light the Star",
+    "zh": "卫诗婕｜漫谈",
+    "by": "卫诗婕",
+    "intro": "有生命力的科技商业人物访谈",
+    "input": "https://www.xiaoyuzhoufm.com/podcast/6627fda4b56459544087d86a",
+    "cover": "https://image.xyzcdn.net/FvKqJeWnsK5PSUH0myvmgSVfY2Iq.png@middle",
+    "topics": [
+      "中文播客",
+      "科技评论",
+      "创业投资"
+    ]
+  },
+  {
+    "id": "luoyonghao",
+    "title": "罗永浩的十字路口",
+    "zh": "罗永浩的十字路口",
+    "by": "罗永浩",
+    "intro": "三五个小时的科技人文长谈",
+    "input": "https://www.xiaoyuzhoufm.com/podcast/68981df29e7bcd326eb91d88",
+    "cover": "https://image.xyzcdn.net/FvR7Od3_I3OQq0ac_8xMPc4zqdOt.png@middle",
+    "topics": [
+      "中文播客",
+      "科技评论",
+      "人文社科"
+    ]
+  },
+  {
+    "id": "beiwang",
+    "title": "贝望录",
+    "zh": "贝望录",
+    "by": "李倩玲",
+    "intro": "与商业领军人物聊创业与经营",
+    "input": "https://www.xiaoyuzhoufm.com/podcast/5e285856418a84a04627b7be",
+    "cover": "https://image.xyzcdn.net/FvAqN8lk3N7O8J076cgL08ysvy2o@middle",
+    "topics": [
+      "中文播客",
+      "创业投资"
+    ]
+  },
+  {
+    "id": "zongheng",
+    "title": "纵横四海",
+    "zh": "纵横四海",
+    "by": "携隐 Melody",
+    "intro": "关于人生选择的长谈",
+    "input": "https://www.xiaoyuzhoufm.com/podcast/62694abdb221dd5908417d1e",
+    "cover": "https://image.xyzcdn.net/FmrdkMv8zSwCoSJ6UXI_nJKDDrQB.png@middle",
+    "topics": [
+      "中文播客",
+      "个人成长"
+    ]
+  },
+  {
+    "id": "huberman",
+    "title": "Huberman Lab",
+    "zh": "Huberman 实验室",
+    "by": "Andrew Huberman",
+    "channel": "Andrew Huberman",
+    "intro": "斯坦福神经科学家讲健康与表现",
+    "input": "https://www.youtube.com/@hubermanlab",
+    "cover": "https://is1-ssl.mzstatic.com/image/thumb/Podcasts221/v4/9a/d3/19/9ad31912-0b5a-a16e-2d7c-9fd074698b9c/mza_8994222203629500925.jpg/600x600bb.jpg",
+    "topics": [
+      "个人成长"
+    ],
+    "video": true
+  },
+  {
+    "id": "mlst",
+    "title": "Machine Learning Street Talk",
+    "zh": "机器学习街谈",
+    "by": "Tim Scarfe",
+    "channel": "Machine Learning Street Talk",
+    "intro": "和 AI 研究者聊得很深的技术对谈",
+    "input": "https://www.youtube.com/@MachineLearningStreetTalk",
+    "cover": "https://is1-ssl.mzstatic.com/image/thumb/Podcasts211/v4/34/e4/14/34e41455-8b0d-9b6e-3290-e02f6da69696/mza_1821645445708339756.jpg/600x600bb.jpg",
+    "topics": [
+      "AI 前沿",
+      "AI 工程"
+    ],
+    "video": true
+  },
+  {
+    "id": "bg2",
+    "title": "BG2Pod with Brad Gerstner and Bill Gurley",
+    "zh": "BG2 投资对谈",
+    "by": "Brad Gerstner & Bill Gurley",
+    "channel": "Bg2 Pod",
+    "intro": "顶级投资人聊科技、市场与 AI",
+    "input": "https://www.youtube.com/@Bg2Pod",
+    "cover": "https://is1-ssl.mzstatic.com/image/thumb/PodcastSource126/v4/4b/ab/e5/4babe58b-7cda-b2b3-40a5-bcac3f262764/33f9cff7-dc0b-4293-a5bf-d8cc62ab8c98.jpg/600x600bb.jpg",
+    "topics": [
+      "创业投资",
+      "AI 前沿",
+      "科技评论"
+    ],
+    "video": true
+  },
+  {
+    "id": "mfm",
+    "title": "My First Million",
+    "zh": "我的第一个百万",
+    "by": "Sam Parr & Shaan Puri",
+    "channel": "My First Million",
+    "intro": "两位创业者聊商业点子与机会",
+    "input": "https://www.youtube.com/@MyFirstMillionPod",
+    "cover": "https://is1-ssl.mzstatic.com/image/thumb/Podcasts221/v4/2a/5e/4d/2a5e4df0-8f2f-c5c7-1be9-4d220778f967/mza_12868536899493151042.jpeg/600x600bb.jpg",
+    "topics": [
+      "创业投资",
+      "产品与增长"
+    ],
+    "video": true
+  },
+  {
+    "id": "modern-wisdom",
+    "title": "Modern Wisdom",
+    "zh": "现代智慧",
+    "by": "Chris Williamson",
+    "channel": "Chris Williamson",
+    "intro": "关于心理、关系与自我提升的长谈",
+    "input": "https://www.youtube.com/@ChrisWillx",
+    "cover": "https://is1-ssl.mzstatic.com/image/thumb/Podcasts221/v4/7f/73/99/7f739968-f65e-f679-d1fd-c727118c69f0/mza_17156407142775783271.jpg/600x600bb.jpg",
+    "topics": [
+      "个人成长"
+    ],
+    "video": true
+  },
+  {
+    "id": "tim-ferriss",
+    "title": "The Tim Ferriss Show",
+    "zh": "蒂姆·费里斯秀",
+    "by": "Tim Ferriss",
+    "channel": "Tim Ferriss",
+    "intro": "拆解顶尖人物的习惯与方法",
+    "input": "https://www.youtube.com/@timferriss",
+    "cover": "https://is1-ssl.mzstatic.com/image/thumb/Podcasts126/v4/18/39/b4/1839b420-7aff-c501-5d0d-af2842fba013/mza_6255154260686997849.jpeg/600x600bb.jpg",
+    "topics": [
+      "个人成长",
+      "创业投资"
+    ],
+    "video": true
+  },
+  {
+    "id": "big-tech",
+    "title": "Big Technology Podcast",
+    "zh": "大科技播客",
+    "by": "Alex Kantrowitz",
+    "channel": "Alex Kantrowitz",
+    "intro": "冷静评论科技巨头与 AI",
+    "input": "https://www.youtube.com/@Alex.kantrowitz",
+    "cover": "https://is1-ssl.mzstatic.com/image/thumb/Podcasts221/v4/c3/30/67/c330676b-2402-432b-0505-12490dc3ccc1/mza_4262545472677654397.jpeg/600x600bb.jpg",
+    "topics": [
+      "科技评论",
+      "AI 前沿"
+    ],
+    "video": true
+  },
+  {
+    "id": "tkp",
+    "title": "The Knowledge Project",
+    "zh": "知识计划",
+    "by": "Shane Parrish",
+    "channel": "The Knowledge Project Podcast",
+    "intro": "聊决策与成功背后的底层原则",
+    "input": "https://www.youtube.com/@tkppodcast",
+    "cover": "https://is1-ssl.mzstatic.com/image/thumb/Podcasts211/v4/4a/9c/e2/4a9ce2fd-ddf6-0d00-8760-4e7167378ecf/mza_16600443422050351456.jpeg/600x600bb.jpg",
+    "topics": [
+      "个人成长",
+      "创业投资"
+    ],
+    "video": true
+  },
+  {
+    "id": "cheeky-pint",
+    "title": "Cheeky Pint",
+    "zh": "小酌一杯",
+    "by": "John Collison",
+    "channel": "Cheeky Pint",
+    "intro": "Stripe 联合创始人边喝边聊创业",
+    "input": "https://www.youtube.com/@cheekypint",
+    "cover": "https://is1-ssl.mzstatic.com/image/thumb/Podcasts211/v4/39/58/7b/39587b37-a6e1-e96b-593d-621d5ec5292a/mza_6705197557754043928.jpg/600x600bb.jpg",
+    "topics": [
+      "创业投资",
+      "AI 前沿"
+    ],
+    "video": true
+  },
+  {
+    "id": "attia",
+    "title": "The Peter Attia Drive",
+    "zh": "Attia 长寿医学",
+    "by": "Peter Attia",
+    "channel": "Peter Attia MD",
+    "intro": "医生深谈长寿、健康与运动",
+    "input": "https://www.youtube.com/@PeterAttiaMD",
+    "cover": "https://is1-ssl.mzstatic.com/image/thumb/Podcasts211/v4/89/b8/c0/89b8c0bb-f65c-66ef-8b96-fffea8f0cf5f/mza_872007510196734520.png/600x600bb.jpg",
+    "topics": [
+      "个人成长"
+    ],
+    "video": true
+  },
+  {
+    "id": "moonshots",
+    "title": "Moonshots with Peter Diamandis",
+    "zh": "登月计划",
+    "by": "Peter Diamandis",
+    "channel": "Peter H. Diamandis",
+    "intro": "追踪 AI 与前沿科技的未来走向",
+    "input": "https://www.youtube.com/@peterdiamandis",
+    "cover": "https://is1-ssl.mzstatic.com/image/thumb/Podcasts221/v4/db/93/ed/db93ed1e-0cc1-8c0d-0788-b987040bf98d/mza_12828457162931711615.jpg/600x600bb.jpg",
+    "topics": [
+      "AI 前沿",
+      "科技评论"
+    ],
+    "video": true
+  },
+  {
+    "id": "every",
+    "title": "AI & I",
+    "zh": "Every：AI 与我",
+    "by": "Dan Shipper",
+    "channel": "Every",
+    "intro": "一线实践者分享怎么用 AI 干活",
+    "input": "https://www.youtube.com/@EveryInc",
+    "cover": "https://is1-ssl.mzstatic.com/image/thumb/Podcasts221/v4/4c/d0/f9/4cd0f9b7-6070-7ebe-0047-1c5bbbd77890/mza_15228488935838032210.jpg/600x600bb.jpg",
+    "topics": [
+      "AI 工程",
+      "产品与增长"
+    ],
+    "video": true
+  }
+]

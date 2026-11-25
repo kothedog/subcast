@@ -7,6 +7,22 @@ import type { Aligned, TimeMap } from "./timemap";
 /** One day-hour of listening to one episode (from the player; seeks don't count). */
 export interface ListenRow { day: string; hour: number; episodeId: string; showId: string; seconds: number; translated: boolean; showTitle: string; kind: string; cover: string; episodeTitle: string; video: boolean; duration: number; progress: number; published: number }
 
+export interface CliStatus {
+  bundled: boolean;
+  bundledPath: string | null;
+  installed: boolean;
+  linkPath: string | null;
+  targetPath: string | null;
+  needsUpdate: boolean;
+  /** A new terminal finds the command. */
+  inPath: boolean;
+  /** Where SubCast just put the command's folder on the PATH (a shell startup file, or "PATH" on Windows). */
+  pathAdded?: string | null;
+}
+
+/** An AI agent on this computer and whether it can call SubCast (its MCP server). */
+export interface McpTarget { id: string; name: string; icon: string; connected: boolean; outdated: boolean; config: string }
+
 export interface ShowHit { episode: Episode; field: "title" | "notes" | "transcript"; snippet: string; time?: number | null }
 
 export interface Show {
@@ -21,6 +37,9 @@ export interface Show {
   updatedAt: number;
   unplayed: number;
 }
+
+/** One line of the network diagnosis (src-tauri network_check). */
+export interface NetCheck { id: string; ok: boolean; ms?: number | null; detail: string }
 
 export interface Episode {
   id: string;
@@ -72,7 +91,7 @@ export interface Saved { episodeId: string; path: string; bytes: number; savedAt
 
 export interface AsrEvent { episodeId: string; stage: "download" | "transcribe" | "segment" | "done" | "error"; progress: number; message?: string; segment?: Segment }
 export interface FfmpegStatus { installed: boolean; path?: string | null; hardwareH264: boolean }
-export interface PreparedClip { path: string; duration: number; /** Seconds before the clip in the file (stream copy from a keyframe). */ lead: number; width: number; height: number; hasBurnedSubtitles: boolean; cached: boolean; frames: string[]; bestFrame: number }
+export interface PreparedClip { path: string; duration: number; /** Seconds before the clip in the file (stream copy from a keyframe). */ lead: number; width: number; height: number; hasBurnedSubtitles: boolean; cached: boolean; frames: string[]; bestFrame: number; /** Pauses (clip time), where "remove pauses" cuts. */ silences?: [number, number][]; /** Where the speaker sits over time: (clip time, 0–1 across). */ subjectTrack?: [number, number][] }
 export interface CueOverlay { start: number; end: number; y: number; pngBase64: string }
 export interface RenderVideoClipRequest {
   rawPath: string;
@@ -97,6 +116,12 @@ export interface RenderVideoClipRequest {
   embedThumbnail: boolean;
   saveCoverSidecar: boolean;
   landscapeCoverPng?: string | null;
+  /** Stretches to keep (clip time, before speed); cue times already on the cut clock. */
+  keepRanges?: [number, number][];
+  /** Even the sound to −14 LUFS. */
+  loudness?: boolean;
+  /** Smart framing: the crop follows the speaker along these (clip time, 0–1) points. */
+  pan?: [number, number][];
 }
 export interface RenderVideoClipResult { videoPath: string; coverPath?: string | null; landscapeCoverPath?: string | null }
 export interface VideoClipProgress { jobId: string; stage: string; progress: number; message: string }
@@ -110,12 +135,13 @@ export const api = {
   listEpisodes: (showId?: string, limit?: number) => invoke<Episode[]>("list_episodes", { showId, limit }),
   recentEpisodes: () => invoke<Episode[]>("recent_episodes"),
   getEpisode: (id: string) => invoke<Episode | null>("get_episode", { id }),
-  removeShow: (id: string) => invoke<void>("remove_show", { id }),
+  removeShow: (id: string, keepEpisodeId?: string) => invoke<void>("remove_show", { id, keepEpisodeId }),
   setProgress: (id: string, seconds: number) => invoke<void>("set_progress", { id, seconds }),
   setWatched: (id: string, watched: "done" | "unseen" | null) => invoke<void>("set_watched", { id, watched }),
   markShowWatched: (showId: string) => invoke<number>("mark_show_watched", { showId }),
   searchShow: (showId: string, query: string) => invoke<ShowHit[]>("search_show", { showId, query }),
   searchPodcasts: (term: string, country?: string) => invoke<SearchResult[]>("search_podcasts", { term, country }),
+  youtubeChannelFeed: (videoId: string) => invoke<string>("youtube_channel_feed", { videoId }),
   loadTranscript: (episodeId: string) => invoke<Transcript | null>("load_transcript", { episodeId }),
   fetchOfficialTranscript: (episodeId: string) => invoke<Transcript | null>("fetch_official_transcript", { episodeId }),
   transcribe: (episodeId: string, model: string, language: string, cloud?: CloudAsr) => invoke<Transcript>("transcribe", { episodeId, model, language, cloud: cloud ?? null }),
@@ -157,7 +183,8 @@ export const api = {
   localTtsStatus: () => invoke<LocalTtsStatus>("local_tts_status"),
   localTtsInstall: (id: string, mirrorFirst: boolean) => invoke<void>("local_tts_install", { id, mirrorFirst }),
   localTtsDelete: (id: string) => invoke<void>("local_tts_delete", { id }),
-  youtubeStream: (videoId: string, mode: "native-hls" | "proxy-hls" | "mp4", fresh = false) => invoke<{ url: string; kind: "hls" | "mp4" }>("youtube_stream", { videoId, mode, fresh }),
+  networkCheck: () => invoke<{ checks: NetCheck[]; webviewProxy: string }>("network_check"),
+  youtubeStream: (videoId: string, mode: "native-hls" | "proxy-hls" | "mp4", fresh = false) => invoke<{ url: string; kind: "hls" | "mp4"; duration?: number | null }>("youtube_stream", { videoId, mode, fresh }),
   uiReady: () => invoke<{ shell: string; build: number | null }>("ui_ready"),
   shareTranslation: (episodeId: string, engine: string, model: string) => invoke<string>("share_translation", { episodeId, engine, model }),
   exportOpml: () => invoke<string>("export_opml"),
@@ -198,6 +225,12 @@ export const api = {
   videoClipPrepare: (jobId: string, videoId: string, start: number, end: number, ranges?: [number, number][]) => invoke<PreparedClip>("video_clip_prepare", { jobId, videoId, start, end, ranges: ranges ?? null }),
   videoClipRender: (jobId: string, req: RenderVideoClipRequest) => invoke<RenderVideoClipResult>("video_clip_render", { jobId, req }),
   revealFile: (path: string) => invoke<void>("reveal_file", { path }),
+  dbDataVersion: () => invoke<number>("db_data_version"),
+  cliStatus: () => invoke<CliStatus>("cli_status"),
+  cliInstall: () => invoke<CliStatus>("cli_install"),
+  mcpTargets: () => invoke<McpTarget[]>("mcp_targets"),
+  mcpConnect: (id: string) => invoke<McpTarget>("mcp_connect", { id }),
+  mcpDisconnect: (id: string) => invoke<McpTarget>("mcp_disconnect", { id }),
 };
 
 let llmCounter = 0;

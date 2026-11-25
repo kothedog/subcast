@@ -28,7 +28,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: swatinem/rust-cache@v2
         with:
-          workspaces: src-tauri -> target
+          workspaces: . -> src-tauri/target
       - name: Linux dependencies
         if: startsWith(matrix.platform, 'ubuntu')
         run: |
@@ -49,6 +49,24 @@ jobs:
           Copy-Item "$($omp.FullName)\vcomp140.dll" src-tauri/windows/vcrt/
           Get-ChildItem src-tauri/windows/vcrt
       - run: npm ci
+      - name: Build and stage subcast-cli (Windows)
+        if: startsWith(matrix.platform, 'windows')
+        shell: pwsh
+        run: |
+          cargo build --release -p subcast-cli
+          $triple = (rustc -vV | Select-String '^host:\s*(.+)$').Matches[0].Groups[1].Value.Trim()
+          New-Item -ItemType Directory -Force -Path src-tauri/binaries | Out-Null
+          Copy-Item src-tauri/target/release/subcast-cli.exe "src-tauri/binaries/subcast-cli-$triple.exe"
+          Get-ChildItem src-tauri/binaries
+      - name: Build and stage subcast-cli (Linux)
+        if: startsWith(matrix.platform, 'ubuntu')
+        run: |
+          cargo build --release -p subcast-cli
+          TRIPLE=$(rustc -vV | awk '/^host:/{print $2}')
+          mkdir -p src-tauri/binaries
+          cp src-tauri/target/release/subcast-cli "src-tauri/binaries/subcast-cli-$TRIPLE"
+          chmod +x "src-tauri/binaries/subcast-cli-$TRIPLE"
+          ls -la src-tauri/binaries
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -62,16 +80,87 @@ jobs:
           # latest.json is written by scripts/release.sh once the Mac builds are in.
           includeUpdaterJson: false
           args: ${{ matrix.args }}
-      # subcast.exe must start on a PC without the Visual C++ Redistributable, and the installer must carry the
-      # runtime CrispASR needs. Fails the build otherwise.
-      - name: Check Windows runtime dependencies
+      # Verify both NSIS (.exe) and WiX (.msi) installers: no VC++ runtime imports on either exe,
+      # vcrt/ DLLs bundled, subcast-cli.exe sits next to subcast.exe, and MCP initialize handshake succeeds.
+      - name: Check Windows runtime dependencies, CLI bundling and MCP handshake
         if: startsWith(matrix.platform, 'windows')
         shell: pwsh
         run: |
-          python scripts/pe-imports.py src-tauri/target/release/subcast.exe --forbid msvcp140.dll vcruntime140.dll vcruntime140_1.dll vcomp140.dll
-          $setup = Get-ChildItem src-tauri/target/release/bundle/nsis/*-setup.exe | Select-Object -First 1
-          $list = & 7z l $setup.FullName
-          foreach ($f in "msvcp140.dll", "vcruntime140.dll", "vcruntime140_1.dll", "vcomp140.dll") {
-            if (-not ($list | Select-String -SimpleMatch $f)) { throw "installer is missing vcrt/$f" }
+          $ErrorActionPreference = 'Stop'
+          python scripts/pe-imports.py src-tauri/target/release/subcast.exe src-tauri/target/release/subcast-cli.exe --forbid msvcp140.dll vcruntime140.dll vcruntime140_1.dll vcomp140.dll
+
+          function Test-McpHandshake([string]$CliPath, [string]$Label) {
+            $tmpData = Join-Path $env:RUNNER_TEMP "subcast-mcp-$Label"
+            New-Item -ItemType Directory -Force -Path $tmpData | Out-Null
+            $psi = New-Object System.Diagnostics.ProcessStartInfo
+            $psi.FileName = $CliPath
+            $psi.Arguments = "--data-dir `"$tmpData`" mcp"
+            $psi.UseShellExecute = $false
+            $psi.RedirectStandardInput = $true
+            $psi.RedirectStandardOutput = $true
+            $psi.RedirectStandardError = $true
+            $p = [System.Diagnostics.Process]::Start($psi)
+            $p.StandardInput.WriteLine('{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"ci","version":"1"}}}')
+            $p.StandardInput.WriteLine('{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}')
+            $p.StandardInput.Close()
+            $out = $p.StandardOutput.ReadToEnd()
+            $err = $p.StandardError.ReadToEnd()
+            if (-not $p.WaitForExit(15000)) { $p.Kill(); throw "$Label MCP handshake timed out" }
+            if ($p.ExitCode -ne 0) { throw "$Label MCP exited $($p.ExitCode): $err" }
+            if ($out -notmatch '"serverInfo".*"name"\s*:\s*"subcast"') { throw "$Label MCP initialize failed: $out" }
+            if ($out -notmatch '"list_shows"') { throw "$Label MCP tools/list failed: $out" }
+            Write-Output "ok: $Label MCP handshake + tools/list passed"
           }
-          Write-Output "ok: no VC++ runtime imports; installer carries vcrt"
+
+          # 1. NSIS setup.exe
+          $setup = Get-ChildItem src-tauri/target/release/bundle/nsis/*-setup.exe | Select-Object -First 1
+          if (-not $setup) { throw "NSIS installer not found" }
+          $nsisDir = Join-Path $env:RUNNER_TEMP "extract-nsis"
+          Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $nsisDir
+          & 7z x $setup.FullName "-o$nsisDir" -y | Out-Null
+          foreach ($f in "msvcp140.dll", "vcruntime140.dll", "vcruntime140_1.dll", "vcomp140.dll") {
+            if (-not (Get-ChildItem -Recurse -Path $nsisDir -Filter $f)) { throw "NSIS installer missing vcrt/$f" }
+          }
+          $nsisExe = Get-ChildItem -Recurse -Path $nsisDir -Filter "subcast.exe" | Select-Object -First 1
+          if (-not $nsisExe) { throw "NSIS installer missing subcast.exe" }
+          $nsisCli = Join-Path $nsisExe.DirectoryName "subcast-cli.exe"
+          if (-not (Test-Path $nsisCli)) { throw "NSIS installer missing subcast-cli.exe next to subcast.exe" }
+          Test-McpHandshake $nsisCli "nsis"
+
+          # 2. WiX .msi
+          $msi = Get-ChildItem src-tauri/target/release/bundle/msi/*.msi | Select-Object -First 1
+          if (-not $msi) { throw "MSI installer not found" }
+          $msiDir = Join-Path $env:RUNNER_TEMP "extract-msi"
+          Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $msiDir
+          $proc = Start-Process msiexec.exe -ArgumentList "/a `"$($msi.FullName)`" /qn TARGETDIR=`"$msiDir`"" -Wait -PassThru
+          if ($proc.ExitCode -ne 0) { throw "msiexec /a failed with exit code $($proc.ExitCode)" }
+          foreach ($f in "msvcp140.dll", "vcruntime140.dll", "vcruntime140_1.dll", "vcomp140.dll") {
+            if (-not (Get-ChildItem -Recurse -Path $msiDir -Filter $f)) { throw "MSI installer missing vcrt/$f" }
+          }
+          $msiExe = Get-ChildItem -Recurse -Path $msiDir -Filter "subcast.exe" | Select-Object -First 1
+          if (-not $msiExe) { throw "MSI installer missing subcast.exe" }
+          $msiCli = Join-Path $msiExe.DirectoryName "subcast-cli.exe"
+          if (-not (Test-Path $msiCli)) { throw "MSI installer missing subcast-cli.exe next to subcast.exe" }
+          Test-McpHandshake $msiCli "msi"
+
+          Write-Output "ok: NSIS and MSI installers verified (vcrt, subcast-cli.exe alongside subcast.exe, MCP handshake)"
+      - name: Check Linux CLI bundling and MCP handshake
+        if: startsWith(matrix.platform, 'ubuntu')
+        run: |
+          DEB=$(ls src-tauri/target/release/bundle/deb/*.deb | head -n 1)
+          dpkg-deb -c "$DEB" | grep -qE '([[:space:]]|\./|/)usr/bin/subcast-cli$' || {
+            echo "DEB missing usr/bin/subcast-cli:" >&2
+            dpkg-deb -c "$DEB" >&2
+            exit 1
+          }
+          DEB_DIR=$(mktemp -d)
+          dpkg-deb -x "$DEB" "$DEB_DIR"
+          CLI="$DEB_DIR/usr/bin/subcast-cli"
+          test -x "$CLI" || { echo "Extracted DEB CLI not executable: $CLI" >&2; exit 1; }
+          OUT=$(printf '%s\n%s\n' \
+            '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"ci","version":"1"}}}' \
+            '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}' \
+            | "$CLI" --data-dir /tmp/subcast-mcp-ci mcp)
+          echo "$OUT" | grep -q '"subcast"' || { echo "Linux MCP initialize failed: $OUT" >&2; exit 1; }
+          echo "$OUT" | grep -q '"list_shows"' || { echo "Linux MCP tools/list failed: $OUT" >&2; exit 1; }
+          echo "ok: Linux deb carries usr/bin/subcast-cli and extracted CLI MCP handshake passed"

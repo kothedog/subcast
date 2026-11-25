@@ -96,7 +96,11 @@ export function VideoDock() {
   useEffect(() => { if (floating && current?.id !== floating.ep.id) useVideoDock.setState({ floating: null }); }, [current?.id]);
 
   if (!ep) return null;
-  const close = () => { useStore.getState().player?.toggle(); useVideoDock.setState({ floating: null }); };
+  const close = () => {
+    const s = useStore.getState();
+    if (s.playing) s.player?.toggle();
+    useVideoDock.setState({ floating: null });
+  };
   return (
     <div ref={box} className={`video-dock ${slot ? "docked" : "floating"} ${theater ? "theater-host" : ""}`}>
       <YouTubePlayer key={ep.id} ep={ep} overlay={slot?.overlay ?? floating?.overlay} onUnplayable={slot?.onUnplayable} />
