@@ -14,7 +14,7 @@ import { Mark } from "./ProviderMark";
 import { useStore } from "../store";
 import { t, tk, tr, useLang } from "../lib/i18n";
 
-const RECOMMENDED = ["deepseek", "siliconflow", "openrouter"];
+const RECOMMENDED = ["deepseek", "bilibili", "siliconflow", "openrouter"];
 /** How many entries each list shows before 「更多」. */
 const SHOWN = 3;
 
@@ -141,7 +141,7 @@ export function ModelSettings({ ProviderEditor }: { ProviderEditor: (props: { p:
           {agent ? <AgentDetail kind={agent} found={found?.find((f) => f.kind === agent)} p={p ?? agentProvider(agent)} onChange={update} />
             : p ? (
               <>
-                <div className="ms-head"><Mark id={p.id} name={tr(p.name)} size={36} /><div><p className="ms-title">{tr(p.name)}</p><p className="muted small">{p.needsKey ? t("用你自己的 API Key，按用量付费给服务商。Key 只存在本机钥匙串。") : t("在你电脑上运行的模型服务，不需要 Key。")}</p></div></div>
+                <div className="ms-head"><Mark id={p.id} name={tr(p.name)} size={36} /><div><p className="ms-title">{tr(p.name)}</p><p className="muted small">{p.needsKey ? t("用你自己的 API Key，按用量付费给服务商。Key 只存在本机钥匙串。") : p.group === "local" ? t("在你电脑上运行的模型服务，不需要 Key。") : t("免费的在线服务，不需要 Key。")}</p></div></div>
                 <ProviderEditor key={p.id} p={p} onChange={update} onKeyChange={() => setKeyRev((n) => n + 1)} />
               </>
             ) : null}

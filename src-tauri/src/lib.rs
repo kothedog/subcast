@@ -638,6 +638,12 @@ fn save_time_map(state: State<'_, AppState>, episode_id: String, map: align::Tim
         .map_err(e)
 }
 
+/// A loopback address for an episode's audio, for when the web view can't load the original (see hlsproxy).
+#[tauri::command]
+async fn audio_stream(url: String) -> Res<String> {
+    subcast_core::hlsproxy::audio(&url).await.map_err(e)
+}
+
 #[tauri::command]
 fn list_audio_cache(state: State<'_, AppState>) -> Vec<offline::Saved> {
     offline::list_cached(&state.ctx.data)
@@ -1164,7 +1170,7 @@ pub fn run() {
             download_model, delete_model, get_blob, set_blob, get_settings, set_settings, set_api_key, has_api_key, llm_chat, translate_texts, shared_transcript, shared_exists, shared_guide, share_guide, asr_elsewhere, log_listen, listening_stats, rescan_models, youtube_subscriptions, open_privacy_settings, export_opml, local_agents, probe_agent, agent_models, warm_agent, share_translation, ui_ready, ui_check, refresh_config, youtube_stream, prepare_youtube, youtube_sign_in, youtube_signed_in, youtube_sign_out, network_check, youtube_tracks, use_youtube_track, youtube_channel_feed, qiaomu_detail, preview_show, list_models, tts_speak, cached_show, save_image, learn_clip, save_text, export_anki, set_menu_labels,
             app_update_check, app_update_download, app_update_install,
             shadow_start, shadow_stop, shadow_clear, shadow_ready, shadow_hear, open_mic_settings,
-            download_episode, list_downloads, delete_download, clear_downloads, align_audio, save_time_map, list_audio_cache, clear_audio_cache, storage_info, open_data_folder, reveal_download, clear_temp, full_notes, tts_synthesize, tts_system_voices, clear_tts_cache, local_tts_status, local_tts_install, local_tts_delete,
+            download_episode, list_downloads, delete_download, clear_downloads, align_audio, save_time_map, list_audio_cache, audio_stream, clear_audio_cache, storage_info, open_data_folder, reveal_download, clear_temp, full_notes, tts_synthesize, tts_system_voices, clear_tts_cache, local_tts_status, local_tts_install, local_tts_delete,
             video_clip_env, video_clip_warm, video_clip_prepare, video_clip_render, reveal_file,
             db_data_version, cli_status, cli_install, mcp_targets, mcp_connect, mcp_disconnect
         ])

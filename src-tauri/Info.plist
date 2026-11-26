@@ -4,5 +4,11 @@
 <dict>
   <key>NSMicrophoneUsageDescription</key>
   <string>跟读模式会听你说的话，用本机语音模型判断跟读得对不对。声音不会离开这台电脑。</string>
+  <!-- Podcast audio on plain-http hosts (and redirects through them) plays in the web view. Only web content. -->
+  <key>NSAppTransportSecurity</key>
+  <dict>
+    <key>NSAllowsArbitraryLoadsInWebContent</key>
+    <true/>
+  </dict>
 </dict>
 </plist>

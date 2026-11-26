@@ -184,6 +184,8 @@ export const PRESETS: Provider[] = [
   o("together", "Together AI", "provider", "https://api.together.xyz/v1", "https://api.together.xyz/settings/api-keys"),
   o("fireworks", "Fireworks AI", "provider", "https://api.fireworks.ai/inference/v1", "https://fireworks.ai/account/api-keys"),
   o("cerebras", "Cerebras", "provider", "https://api.cerebras.ai/v1", "https://cloud.cerebras.ai/"),
+  // Bilibili's Index-Translate: a free translation model, OpenAI-compatible, no key needed.
+  o("bilibili", tk("B 站翻译（免费）"), "provider", "https://index-translate.bilibili.com/v1", "https://index-translate.bilibili.com/site/home.html", ["Index-Translate-35B-A3B"], false),
   o("ollama", "Ollama", "local", "http://127.0.0.1:11434/v1", undefined, ["qwen3.5", "gemma4", "gpt-oss:20b"]),
   o("lmstudio", "LM Studio", "local", "http://127.0.0.1:1234/v1", undefined),
   o("magpie", "Magpie", "local", "http://127.0.0.1:3425/v1", "https://github.com/yetone/magpie"),

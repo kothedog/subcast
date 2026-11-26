@@ -8,10 +8,10 @@ import { create } from "zustand";
 import { api, errorText, llmChat, type AnkiNote, type Episode, type Segment } from "../lib/api";
 import { save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
-import { WORD_RE, isNew, loadDict, lookup, tagLabel, useDict, type Entry } from "../lib/dict";
+import { WORD_RE, isNew, loadDict, looksEnglish, lookup, tagLabel, useDict, type Entry } from "../lib/dict";
 import { clipKey, playClip, prefetchClip, prepareClip, speak, stopClip, toggleClip, useClipState } from "../lib/clip";
 import { Rating, intervals, isMastered, remindReview, reviewQueue, toCsv, useDueCount, useWords, type Grade, type Word } from "../lib/words";
-import { llmReady } from "../lib/jobs";
+import { llmReady, useJobs } from "../lib/jobs";
 import { providerFor, seekSoon, useStore } from "../store";
 import { clock } from "../lib/format";
 import { t, tk, useLang } from "../lib/i18n";
@@ -118,7 +118,7 @@ export const LearnText = memo(function LearnText({ text, marks }: { text: string
 export interface CardTarget { el: HTMLElement; token: string; seg: Segment; zh?: string | null }
 
 /** The word card for a clicked word: meaning, what it means in this sentence, the speaker's voice, save. */
-export function WordCard({ target, ep, onClose }: { target: CardTarget; ep: Episode; onClose: () => void }) {
+export function WordCard({ target, ep, onClose, className }: { target: CardTarget; ep: Episode; onClose: () => void; className?: string }) {
   useLang((s) => s.lang);
   const data = useDict((s) => s.data);
   const entry = useMemo(() => (data ? lookup(data, target.token) : null), [data, target.token]);
@@ -139,6 +139,8 @@ export function WordCard({ target, ep, onClose }: { target: CardTarget; ep: Epis
 
   // Below the word, or above it when there is no room; kept inside the window.
   const place = useCallback(() => {
+    // A subtitle line that moved on took the word with it: stay where the card is.
+    if (!target.el.isConnected) { setPos((p) => (p.visibility === "hidden" ? { left: 12, bottom: 12 } : p)); return; }
     const r = target.el.getBoundingClientRect();
     const h = box.current?.offsetHeight ?? 240;
     const w = 320;
@@ -160,6 +162,8 @@ export function WordCard({ target, ep, onClose }: { target: CardTarget; ep: Epis
     const scroll = (e: Event) => {
       if (box.current?.contains(e.target as Node)) return;
       const scroller = e.target instanceof HTMLElement ? e.target : null;
+      // A list scrolling somewhere else (the transcript following along while a word over the video is open).
+      if (scroller && !scroller.contains(target.el)) return;
       // Ignore programmatic auto-scroll (and tiny scroll jitter) while the word is still visible: follow it instead.
       const autoUntil = Number(scroller?.dataset.autoScrollUntil ?? 0);
       const r = target.el.getBoundingClientRect();
@@ -208,7 +212,7 @@ export function WordCard({ target, ep, onClose }: { target: CardTarget; ep: Epis
   const label = entry ? tagLabel(entry.tags) : "";
 
   return createPortal(
-    <div ref={box} className="word-card" style={pos} role="dialog" aria-label={entry?.lemma ?? target.token}>
+    <div ref={box} className={`word-card${className ? ` ${className}` : ""}`} style={pos} role="dialog" aria-label={entry?.lemma ?? target.token}>
       <div className="wc-head">
         <span className="wc-word">{entry?.lemma ?? target.token}</span>
         {label && <span className="pill">{t(label)}</span>}
@@ -235,6 +239,51 @@ export function WordCard({ target, ep, onClose }: { target: CardTarget; ep: Epis
     </div>,
     document.body,
   );
+}
+
+/** Marks for the subtitles over the video or under the cover, which have no transcript panel of their own. */
+export function useSubtitleMarks(epId: string): LearnMarks | null {
+  const english = useJobs((s) => {
+    const tr = s.transcripts[epId];
+    return tr ? looksEnglish(tr.language, tr.segments.slice(0, 20).map((x) => x.text).join(" ")) : false;
+  });
+  const marks = useLearnMarks(english);
+  const card = useStore((s) => s.settings.learnCard);
+  return card ? marks : null;
+}
+
+/** The word card opened from those subtitles. It always pauses (the line would move on and take the word with
+ *  it, which is why Language Reactor and asbplayer pause on lookup), and plays again on close if it paused. */
+export function useSubCard(epId: string) {
+  const [card, setCard] = useState<CardTarget | null>(null);
+  const paused = useRef(false);
+  const open = !!card;
+  const resume = useRef<number | undefined>(undefined);
+  useEffect(() => {
+    const s = useStore.getState();
+    window.clearTimeout(resume.current);
+    if (open) {
+      if (s.current?.id === epId && s.playing) { s.player?.toggle(); paused.current = true; }
+    } else if (paused.current) {
+      // A moment later, so clicking from one word straight to the next doesn't play a beat in between.
+      resume.current = window.setTimeout(() => {
+        paused.current = false;
+        const now = useStore.getState();
+        if (now.current?.id === epId && !now.playing) now.player?.toggle();
+      }, 300);
+    }
+  }, [open, epId]);
+  useEffect(() => () => window.clearTimeout(resume.current), []);
+  const closedAt = useRef(0);
+  const close = useCallback(() => { closedAt.current = performance.now(); setCard(null); }, []);
+  /** A card is open, or closed a moment ago by the press now under way (the card closes itself on pointerdown,
+   *  before the subtitle's own handler runs), so that press shouldn't also play or pause. */
+  const busy = useCallback(() => open || performance.now() - closedAt.current < 400, [open]);
+  /** Opens the card for a clicked word, or closes it when that word's card is already open. */
+  const pick = useCallback((el: HTMLElement, seg: Segment, zh?: string | null) => {
+    setCard((c) => (c?.el === el ? null : { el, token: el.textContent ?? "", seg, zh }));
+  }, []);
+  return { card, pick, close, busy };
 }
 
 const CTX_PROMPT = "你是耐心的英语老师。用户给出一个英文单词和它所在的句子。用一句简短的中文（不超过 40 个字）说明这个词在这句话里的具体意思，可以点出它和句中其他部分的关系。只输出这句解释，不要重复单词，不要加引号。"; // i18n-ignore (prompt)

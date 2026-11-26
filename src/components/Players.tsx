@@ -142,6 +142,20 @@ function track(ep: Episode, raw: number, length?: number): number | undefined {
   return gapEnd;
 }
 
+/** Local copies that failed to play (deleted from the cache, or not readable): the original address is used. */
+const brokenLocal = new Set<string>();
+/** Where to play an episode from, skipping a local copy that already failed. */
+function playable(ep: Episode): string | undefined {
+  const s = audioSrc(ep);
+  return s && brokenLocal.has(s) ? ep.audioUrl : s;
+}
+/** What failed, for the note the listener sees (MediaError codes). */
+function mediaProblem(code?: number): string {
+  if (code === 2) return t("网络中断");
+  if (code === 3) return t("音频无法解码");
+  return t("地址打不开或格式不支持");
+}
+
 /** The audio element lives at the app root so playback continues while browsing. */
 export function AudioEngine() {
   const current = useStore((s) => s.current);
@@ -151,10 +165,12 @@ export function AudioEngine() {
   const saved = useOffline((s) => (audio ? (s.saved[audio.id] ?? s.cached[audio.id])?.path : undefined));
   // The address is fixed per episode so a download finishing mid-episode does not cut in; it takes over at the next pause.
   const [chosen, setChosen] = useState<{ id: string; src?: string } | null>(null);
-  const src = audio ? (chosen?.id === audio.id ? chosen.src : audioSrc(audio)) : undefined;
+  const src = audio ? (chosen?.id === audio.id ? chosen.src : playable(audio)) : undefined;
   const setSrc = (s?: string) => audio && setChosen({ id: audio.id, src: s });
   useEffect(() => { if (audio && chosen?.id !== audio.id) setSrc(src); }, [audio?.id]);
-  useEffect(() => { if (audio && saved && ref.current?.paused !== false) setSrc(audioSrc(audio)); }, [saved]);
+  useEffect(() => { if (audio && saved && ref.current?.paused !== false) setSrc(playable(audio)); }, [saved]);
+  /** What a failed load has tried for this episode: one retry of the address, then SubCast's own route to it. */
+  const tries = useRef({ id: "", retried: false, routed: false });
   // Subtitles made from another cut of the episode (other ads, a re-edit): line them up with what plays.
   const hasSubtitles = useJobs((s) => !!(audio && s.transcripts[audio.id]?.segments.length));
   useEffect(() => { if (audio && hasSubtitles) void alignCurrent(); }, [audio?.id, hasSubtitles]);
@@ -166,7 +182,7 @@ export function AudioEngine() {
   useEffect(() => {
     if (!audio || !alignPath) return;
     const file = convertFileSrc(alignPath);
-    if (file === src) return;
+    if (file === src || brokenLocal.has(file)) return;
     if (!useOffline.getState().saved[audio.id]) noteCached(audio.id, alignPath, useStore.getState().align?.localBytes ?? 0);
     resume.current = !!ref.current && !ref.current.paused;
     carry.current = useStore.getState().time;
@@ -179,8 +195,9 @@ export function AudioEngine() {
     const handle = {
       seek: (t: number) => { el.currentTime = toPlay(mapOf(audio.id), t); el.play().catch(() => {}); },
       seekRaw: (t: number) => { el.currentTime = t; el.play().catch(() => {}); },
-      toggle: () => (el.paused ? void el.play().catch(() => {}) : el.pause()),
-      play: () => void el.play().catch(() => {}),
+      // A load that failed leaves the element dead until it loads again.
+      toggle: () => { if (!el.paused) { el.pause(); return; } if (el.error) el.load(); void el.play().catch(() => {}); },
+      play: () => { if (el.error) el.load(); void el.play().catch(() => {}); },
       setRate: (r: number) => { el.playbackRate = r; },
       episodeId: audio.id,
     };
@@ -201,6 +218,8 @@ export function AudioEngine() {
       onLoadedMetadata={(e) => {
         const el = e.currentTarget;
         el.playbackRate = rate;
+        // It loaded: a later drop (the network mid-episode) gets its own quick retry.
+        tries.current.retried = false;
         const s = useStore.getState();
         const start = toPlay(mapOf(audio.id), carry.current ?? (s.current?.id === audio.id ? s.time : audio.progress));
         carry.current = null;
@@ -225,10 +244,49 @@ export function AudioEngine() {
         const at = toContent(mapOf(audio.id), e.currentTarget.currentTime).at;
         void api.setProgress(audio.id, at);
         notePlaybackProgress(audio, at, e.currentTarget.duration || audio.duration);
-        if (saved && src !== audioSrc(audio)) setSrc(audioSrc(audio));
+        if (saved && src !== playable(audio) && !tries.current.routed) setSrc(playable(audio));
       }}
       onEnded={(e) => { markEnded(audio, toContent(mapOf(audio.id), e.currentTarget.duration || e.currentTarget.currentTime).at); playNext(); }}
-      onError={() => { waiting(false); useStore.getState().notify(t("音频加载失败，可能是网络问题或地址已失效")); }}
+      onError={(e) => {
+        const el = e.currentTarget;
+        const remote = audio.audioUrl;
+        if (tries.current.id !== audio.id) tries.current = { id: audio.id, retried: false, routed: false };
+        const st = useStore.getState();
+        /** Carries on from where it was, playing again if it was. */
+        const again = (next?: string) => {
+          carry.current = st.current?.id === audio.id ? st.time : audio.progress;
+          resume.current = st.playing;
+          if (next === src) el.load(); else setSrc(next);
+        };
+        console.warn("SubCast audio failed", el.error?.code, el.error?.message, src);
+        // A local copy that won't open (trimmed from the cache, or not allowed): the original has the same bytes.
+        if (src && remote && src !== remote && !src.startsWith("http://127.0.0.1:")) {
+          brokenLocal.add(src);
+          again(remote);
+          return;
+        }
+        if (!remote) { waiting(false); st.notify(t("音频加载失败：{why}", { why: mediaProblem(el.error?.code) })); return; }
+        // Hosts sometimes refuse one request (busy, rate-limited): once more after a moment.
+        if (!tries.current.retried) {
+          tries.current.retried = true;
+          window.setTimeout(() => { if (useStore.getState().current?.id === audio.id) again(src); }, 1200);
+          return;
+        }
+        // The web view can't load it (a proxy the host refuses, plain http, odd answers): SubCast fetches it.
+        if (!tries.current.routed) {
+          tries.current.routed = true;
+          api.audioStream(remote).then(
+            (via) => { if (useStore.getState().current?.id === audio.id) again(via); },
+            () => { waiting(false); st.notify(t("音频加载失败：{why}", { why: mediaProblem(el.error?.code) })); },
+          );
+          return;
+        }
+        waiting(false);
+        st.set({ playing: false });
+        // Pressing play again starts over (the element reloads: see the handle).
+        tries.current = { id: "", retried: false, routed: false };
+        st.notify(t("音频加载失败：{why}。可以在 设置 › 通用 › 网络诊断 检查网络或代理", { why: mediaProblem(el.error?.code) }));
+      }}
     />
   );
 }

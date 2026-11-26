@@ -90,6 +90,11 @@ pub fn client() -> reqwest::Client {
     CLIENT.read().unwrap().1.clone()
 }
 
+/// A client that ignores every proxy, for a second try when the proxied route fails.
+pub fn direct() -> reqwest::Client {
+    DIRECT.clone()
+}
+
 /// A GET with up to two retries on connection-level failures, timeouts, 429 and 5xx (all safe to repeat).
 pub async fn get(url: &str) -> Result<reqwest::Response> {
     let mut last: Option<anyhow::Error> = None;

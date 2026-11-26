@@ -625,11 +625,15 @@ body.resizing iframe, body.resizing video { pointer-events: none; }
 .mini { left: calc(var(--sidebar-w) + 16px); }
 .onboard-bar { left: var(--sidebar-w); }
 /* The player keeps 16:9 and never pushes its controls below the fold; wide columns center it. */
-.ep-left > .video, .ep-left > .video-slot, .ep-left > .audio-stage { width: min(100%, calc((100vh - 330px) * 16 / 9)); align-self: center; }
-.ep-left > .controls-slot, .ep-left > .controls-dock, .ep-left > .yt-strip { width: min(100%, max(560px, calc((100vh - 330px) * 16 / 9))); align-self: center; }
+/* --player-h is the most height the player may take. With 字幕 under it, the player gives up room so the list (and its
+   followed line) stays on screen: the list fills what is left of the column, never less than 240px. */
+.ep-left { --player-h: calc(100vh - 330px); }
+.ep-left.transcript-below { --player-h: calc(100vh - 330px - clamp(240px, 30vh, 380px)); }
+.ep-left > .video, .ep-left > .video-slot, .ep-left > .audio-stage { width: min(100%, calc(var(--player-h) * 16 / 9)); align-self: center; }
+.ep-left > .controls-slot, .ep-left > .controls-dock, .ep-left > .yt-strip { width: min(100%, max(560px, calc(var(--player-h) * 16 / 9))); align-self: center; }
 /* 字幕 under the player (Settings › 字幕 › 字幕列表): its own scrolling box, as wide as the controls. */
-.ep-left > .ep-transcript { width: min(100%, max(560px, calc((100vh - 330px) * 16 / 9))); align-self: center; height: clamp(360px, 62vh, 760px); display: flex; flex-direction: column; min-height: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 16px; overflow: hidden; container-type: inline-size; }
-.ep-left > .ep-title-block, .ep-left > .notes { width: min(100%, max(560px, calc((100vh - 330px) * 16 / 9))); align-self: center; }
+.ep-left > .ep-transcript { width: min(100%, max(560px, calc(var(--player-h) * 16 / 9))); align-self: center; flex: 1 0 0; min-height: 240px; display: flex; flex-direction: column; background: var(--panel); border: 1px solid var(--line); border-radius: 16px; overflow: hidden; container-type: inline-size; }
+.ep-left > .ep-title-block, .ep-left > .notes { width: min(100%, max(560px, calc(var(--player-h) * 16 / 9))); align-self: center; }
 .ep-left:has(.menu) { position: relative; z-index: 35; }
 .topbar { position: relative; z-index: 40; }
 
@@ -846,7 +850,7 @@ body.resizing iframe, body.resizing video { pointer-events: none; }
 .guide-card .notes-head .muted { flex: 1; }
 .guide-body { padding: 4px 16px 16px; }
 .guide-body .panel-empty { padding: 16px 0; }
-.ep-left > .guide-card { width: min(100%, max(560px, calc((100vh - 330px) * 16 / 9))); align-self: center; }
+.ep-left > .guide-card { width: min(100%, max(560px, calc(var(--player-h) * 16 / 9))); align-self: center; }
 
 /* ===================== selection toolbar + poster ===================== */
 .sel-bar { position: fixed; z-index: 60; transform: translate(-50%, -100%); display: flex; flex-direction: column; align-items: center; gap: 6px; animation: fade-in .12s var(--ease); }
@@ -1618,10 +1622,12 @@ body.tape-seek .seek::-webkit-slider-thumb { border-radius: 3px; width: 12px; he
 .video-dock { position: fixed; z-index: 15; border-radius: 12px; overflow: hidden; }
 .video-dock .video { width: 100%; height: 100%; aspect-ratio: auto; border-radius: 0; }
 .video-dock.floating { right: 24px; bottom: 96px; width: 340px; height: 191px; z-index: 45; box-shadow: 0 12px 40px rgba(0,0,0,.28); }
-.video-dock.floating .subtitle-overlay p { font-size: 12px !important; }
-.video-dock.floating .sub-zh + .sub-orig { display: none; }
+/* The small window's own subtitle size; full screen from the small window (theater-host) uses the normal sizes. */
+.video-dock.floating:not(.theater-host) .subtitle-overlay p { font-size: 12px !important; }
+.video-dock.floating:not(.theater-host) .sub-zh + .sub-orig { display: none; }
 .video-float-bar { position: absolute; top: 6px; right: 6px; z-index: 7; display: flex; gap: 4px; opacity: 0; transition: opacity .15s; }
-.video-dock.floating:hover .video-float-bar { opacity: 1; }
+.video-dock.floating:not(.theater-host):hover .video-float-bar { opacity: 1; }
+.video-dock.theater-host .video-float-bar { display: none; }
 .video-float-bar .icon-btn { background: rgba(0,0,0,.55); color: #fff; }
 .video-dock.theater-host { clip-path: none !important; z-index: 400; }
 /* Audio episodes: current line, and the next one waiting below it. Every line has a fixed box (two lines for
@@ -1949,6 +1955,14 @@ button.track-pick:focus-visible { background: var(--line); color: var(--text); }
 .ew-know { padding-left: 0; padding-right: 0; }
 .lw.open, .lines.learning .lw.open:hover { color: var(--on-ink); background: var(--ink); padding: 1px 3px; margin: 0 -3px; }
 .fill-ico { fill: currentColor; }
+/* Clickable words in the subtitles over the video and under the cover. Over the picture the text is light on
+   dark whatever the theme, so saved words get a tint of the accent rather than the panel's soft fill. */
+.sub-learn .lw { cursor: pointer; border-radius: 3px; }
+@media (hover: hover) { .audio-sub .sub-learn .lw:not(.open):hover { background: var(--soft-hover); } .video .sub-learn .lw:not(.open):hover { background: rgba(255,255,255,.18); } }
+.video .sub-learn .lw.saved { color: #fff; background: color-mix(in srgb, var(--accent) 38%, transparent); }
+.video .sub-learn .lw.got { color: color-mix(in srgb, var(--accent) 55%, #fff); }
+.video .sub-learn .lw.open { color: #111; background: #fff; }
+.word-card.over-video { z-index: 450; }
 .btn.play svg { color: var(--accent); }
 
 .word-card { position: fixed; z-index: 60; width: 320px; padding: 16px; border: 1px solid transparent; border-radius: 14px; background: var(--panel); box-shadow: 0 0 0 1px rgba(0,0,0,.06), 0 2px 4px rgba(0,0,0,.04), 0 12px 32px -4px rgba(0,0,0,.16); }
@@ -2192,7 +2206,7 @@ canvas.confetti { position: fixed; inset: 0; width: 100%; height: 100%; pointer-
 .sub-tune { position: absolute; top: 10px; right: 10px; z-index: 7; display: flex; flex-direction: column; align-items: flex-end; gap: 6px; opacity: 0; transition: opacity .2s var(--ease); }
 .video:hover .sub-tune, .sub-tune.open, .sub-tune:focus-within { opacity: 1; }
 .video.theater.idle .sub-tune:not(.open) { opacity: 0; pointer-events: none; }
-.video-dock.floating .sub-tune { display: none; }
+.video-dock.floating:not(.theater-host) .sub-tune { display: none; }
 .sub-tune-btn { width: 32px; height: 32px; display: grid; place-items: center; border: 0; border-radius: 8px; background: rgba(0,0,0,.55); color: #fff; cursor: pointer; backdrop-filter: blur(6px); }
 .sub-tune-btn:hover, .sub-tune.open .sub-tune-btn { background: rgba(0,0,0,.75); }
 .sub-tune-pop { width: 280px; max-height: calc(100cqh - 62px); overflow-y: auto; display: flex; flex-direction: column; gap: 10px; padding: 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); color: var(--text); box-shadow: 0 10px 28px rgba(0,0,0,.24); font-size: 13px; cursor: default; }

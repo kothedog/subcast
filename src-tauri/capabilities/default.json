@@ -99,6 +99,7 @@
     "allow-shadow-hear",
     "allow-open-mic-settings",
     "allow-list-audio-cache",
+    "allow-audio-stream",
     "allow-clear-audio-cache",
     "allow-storage-info",
     "allow-open-data-folder",
