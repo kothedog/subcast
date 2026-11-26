@@ -41,6 +41,7 @@ import { pieceAt, pieces } from "../lib/pieces";
 import { setSubLift } from "../lib/reading";
 import { subtitleModeFor } from "../lib/settings";
 import { activeIndex, TranscriptPanel } from "./TranscriptPanel";
+import { LearnText, WordCard, useSubCard, useSubtitleMarks, type LearnMarks } from "./Learn";
 
 type Tab = "transcript" | "deep" | "chat" | "summary";
 const TAB_NAMES: Record<Tab, string> = { transcript: tk("字幕"), deep: tk("乔木精读"), chat: tk("AI 问答"), summary: tk("AI 导读") };
@@ -62,7 +63,7 @@ function AudioSubtitles({ ep }: { ep: Episode }) {
   // Something only this audio has (an ad, most likely): say so instead of holding a line that isn't being said.
   const gapLeft = useStore((s) => (s.current?.id === ep.id && s.gapEnd && s.rawTime != null ? Math.ceil(s.gapEnd - s.rawTime) : 0));
   const segs = transcript?.segments;
-  const pos = useStore(useShallow((s) => {
+  const livePos = useStore(useShallow((s) => {
     if (!segs?.length) return { i: -1, k: 0 };
     const t = s.current?.id === ep.id ? s.time : ep.progress;
     const i = Math.max(0, activeIndex(segs, t));
@@ -73,6 +74,12 @@ function AudioSubtitles({ ep }: { ep: Episode }) {
     const origPs = pieces(seg.text, cjk);
     return { i, k: pieceIndex(origPs, progress) };
   }));
+  const marks = useSubtitleMarks(ep.id);
+  const { card, pick, close } = useSubCard(ep.id);
+  // While a word card is open the lines hold still, so the word stays under it.
+  const held = useRef(livePos);
+  if (!card) held.current = livePos;
+  const pos = held.current;
   if (!transcript || mode === "off") return null;
   if (gapLeft > 0) return (
     <div className="asub asub-gap" aria-live="off">
@@ -96,13 +103,31 @@ function AudioSubtitles({ ep }: { ep: Episode }) {
   const nextLine = k + 1 < origPs.length
     ? { orig: origPs[k + 1], zh: zhPs.length ? (zhPs.length === origPs.length ? zhPs[k + 1] : kz + 1 < zhPs.length ? zhPs[kz + 1] : undefined) : undefined }
     : nextSeg ? { orig: pieces(nextSeg.text, cjk(nextSeg.text))[0], zh: nextZh ? pieces(nextZh, true)[0] : undefined } : null;
-  const line = (l: { orig: string; zh?: string }, role: "now" | "next", key: string) => (
-    <div key={key} className={`asub-line ${role}`} aria-hidden={role === "next"}>
+  const line = (l: { orig: string; zh?: string }, role: "now" | "next", key: string, at: number) => (
+    <div key={key} className={`asub-line ${role}`} aria-hidden={role === "next"} data-i={at}>
       {l.zh && mode !== "original" && <p className="sub-zh">{l.zh}</p>}
-      {(mode !== "translation" || !l.zh) && <p className="sub-orig">{l.orig}</p>}
+      {(mode !== "translation" || !l.zh) && <p className="sub-orig"><SubText text={l.orig} marks={marks} /></p>}
     </div>
   );
-  return <div className="asub" aria-live="off">{line(nowLine, "now", `${i}-${k}`)}{nextLine && line(nextLine, "next", `${i}-${k}-n`)}</div>;
+  const onClick = (e: React.MouseEvent) => {
+    const el = marks && (e.target as HTMLElement).closest<HTMLElement>(".lw");
+    const at = Number(el?.closest<HTMLElement>("[data-i]")?.dataset.i);
+    if (!el || !segs[at]) return;
+    e.stopPropagation();
+    pick(el, segs[at], items?.[at]);
+  };
+  return (
+    <div className={`asub${marks ? " sub-learn" : ""}`} aria-live="off" onClick={onClick}>
+      {line(nowLine, "now", `${i}-${k}`, i)}
+      {nextLine && line(nextLine, "next", `${i}-${k}-n`, k + 1 < origPs.length ? i : i + 1)}
+      {card && <WordCard target={card} ep={ep} onClose={close} />}
+    </div>
+  );
+}
+
+/** A subtitle line with its English words clickable when the learning mode is on, plain text otherwise. */
+function SubText({ text, marks }: { text: string; marks: LearnMarks | null }) {
+  return marks ? <LearnText text={text} marks={marks} /> : <>{text}</>;
 }
 
 function SubtitleOverlay({ ep }: { ep: Episode }) {
@@ -117,14 +142,18 @@ function SubtitleLine({ ep }: { ep: Episode }) {
   const transcript = useJobs((s) => s.transcripts[ep.id]);
   const items = useJobs((s) => s.translations[ep.id]?.items);
   const mode = useStore((s) => subtitleModeFor(s.settings, ep));
-  const drag = useRef<{ y: number; lift: number; h: number; moved: boolean } | null>(null);
+  const drag = useRef<{ y: number; lift: number; h: number; moved: boolean; word: HTMLElement | null; hadCard: boolean } | null>(null);
+  const marks = useSubtitleMarks(ep.id);
+  const { card, pick, close, busy } = useSubCard(ep.id);
+  /** The word last clicked and when, so the second click of a double-click doesn't close its card again. */
+  const lastWord = useRef<{ el: HTMLElement; at: number } | null>(null);
   const [dragging, setDragging] = useState(false);
   // A click plays or pauses a moment later, so a double-click (back to the usual place) doesn't do both.
   const click = useRef<number | undefined>(undefined);
   useEffect(() => () => window.clearTimeout(click.current), []);
   // Only the piece being shown is subscribed to, so the overlay re-renders when the words change, not every tick.
   const segs = transcript?.segments;
-  const cue = useStore(useShallow((s) => {
+  const liveCue = useStore(useShallow((s) => {
     if (!segs?.length) return { i: -1, orig: "", zh: "" };
     const t = s.current?.id === ep.id ? s.time : ep.progress;
     const i = activeIndex(segs, t);
@@ -139,12 +168,18 @@ function SubtitleLine({ ep }: { ep: Episode }) {
       zh: zhRaw ? pieceAt(zhRaw, true, progress) : "",
     };
   }));
+  // While a word card is open the line holds still, so the word stays under it.
+  const held = useRef(liveCue);
+  if (!card) held.current = liveCue;
+  const cue = held.current;
   if (mode === "off" || cue.i < 0) return null;
   const down = (e: React.PointerEvent<HTMLDivElement>) => {
     const video = e.currentTarget.closest<HTMLElement>(".video");
     if (e.button !== 0 || !video) return;
+    // Pointer capture retargets the release to the box, so the word under the press is noted now.
+    const word = marks ? (e.target as HTMLElement).closest<HTMLElement>(".lw") : null;
     e.currentTarget.setPointerCapture(e.pointerId);
-    drag.current = { y: e.clientY, lift: useStore.getState().settings.subtitleLift ?? 0, h: video.clientHeight || 1, moved: false };
+    drag.current = { y: e.clientY, lift: useStore.getState().settings.subtitleLift ?? 0, h: video.clientHeight || 1, moved: false, word, hadCard: busy() };
   };
   const move = (e: React.PointerEvent) => {
     const d = drag.current;
@@ -158,14 +193,28 @@ function SubtitleLine({ ep }: { ep: Episode }) {
     const d = drag.current;
     drag.current = null;
     setDragging(false);
-    if (d && !d.moved) { window.clearTimeout(click.current); click.current = window.setTimeout(() => useStore.getState().player?.toggle(), 260); }
+    if (!d || d.moved) return;
+    window.clearTimeout(click.current);
+    const seg = segs?.[cue.i];
+    if (d.word && seg) {
+      // A click on a word opens its card instead of playing or pausing.
+      const last = lastWord.current;
+      lastWord.current = { el: d.word, at: performance.now() };
+      if (last?.el === d.word && performance.now() - last.at < 350) return;
+      pick(d.word, seg, items?.[cue.i]);
+      return;
+    }
+    // A click that closed the card is just that; the card resumes playback itself.
+    if (d.hadCard) return;
+    click.current = window.setTimeout(() => useStore.getState().player?.toggle(), 260);
   };
   return (
     <div className="subtitle-overlay">
-      <div className={`sub-box ${dragging ? "dragging" : ""}`} onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up} onDoubleClick={(e) => { e.stopPropagation(); window.clearTimeout(click.current); setSubLift(0); }}>
+      <div className={`sub-box ${dragging ? "dragging" : ""}${marks ? " sub-learn" : ""}`} onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up} onDoubleClick={(e) => { e.stopPropagation(); window.clearTimeout(click.current); if (!(e.target as HTMLElement).closest(".lw")) setSubLift(0); }}>
         {cue.zh && mode !== "original" && <p className="sub-zh">{cue.zh}</p>}
-        {(mode !== "translation" || !cue.zh) && <p className="sub-orig">{cue.orig}</p>}
+        {(mode !== "translation" || !cue.zh) && <p className="sub-orig"><SubText text={cue.orig} marks={marks} /></p>}
       </div>
+      {card && <WordCard target={card} ep={ep} onClose={close} className="over-video" />}
     </div>
   );
 }
@@ -527,7 +576,7 @@ function EpisodeBody({ ep, tab, setTab, startAudio }: { ep: Episode; tab: Tab; s
       <div className={`ep-body ${panelOpen ? "" : "panel-collapsed"}`} style={{ "--panel-w": `${panelOpen ? panel : 0}px` } as React.CSSProperties}>
         <div className="ep-leftcol">
         <TopBar />
-        <section className="ep-left" ref={leftRef}>
+        <section className={`ep-left ${below ? "transcript-below" : ""}`} ref={leftRef}>
           <div className="ep-title-block">
             <div className="ep-title">
               <p className="meta-line">

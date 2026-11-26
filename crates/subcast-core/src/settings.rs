@@ -71,6 +71,7 @@ pub const PROVIDER_PRESETS: &[ProviderPreset] = &[
     ProviderPreset { id: "together", name: "Together AI", group: "provider", protocol: "openai", base_url: "https://api.together.xyz/v1", model: "", needs_key: true, models: &[] },
     ProviderPreset { id: "fireworks", name: "Fireworks AI", group: "provider", protocol: "openai", base_url: "https://api.fireworks.ai/inference/v1", model: "", needs_key: true, models: &[] },
     ProviderPreset { id: "cerebras", name: "Cerebras", group: "provider", protocol: "openai", base_url: "https://api.cerebras.ai/v1", model: "", needs_key: true, models: &[] },
+    ProviderPreset { id: "bilibili", name: "B 站翻译（免费）", group: "provider", protocol: "openai", base_url: "https://index-translate.bilibili.com/v1", model: "Index-Translate-35B-A3B", needs_key: false, models: &["Index-Translate-35B-A3B"] },
     ProviderPreset { id: "ollama", name: "Ollama", group: "local", protocol: "openai", base_url: "http://127.0.0.1:11434/v1", model: "qwen3.5", needs_key: false, models: &["qwen3.5", "gemma4", "gpt-oss:20b"] },
     ProviderPreset { id: "lmstudio", name: "LM Studio", group: "local", protocol: "openai", base_url: "http://127.0.0.1:1234/v1", model: "", needs_key: false, models: &[] },
     ProviderPreset { id: "magpie", name: "Magpie", group: "local", protocol: "openai", base_url: "http://127.0.0.1:3425/v1", model: "", needs_key: false, models: &[] },

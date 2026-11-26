@@ -213,6 +213,8 @@ export const api = {
   alignAudio: (episodeId: string, force: boolean, model?: string) => invoke<Aligned>("align_audio", { episodeId, force, model }),
   saveTimeMap: (episodeId: string, map: TimeMap) => invoke<void>("save_time_map", { episodeId, map }),
   listAudioCache: () => invoke<Saved[]>("list_audio_cache"),
+  /** A loopback address that fetches an episode's audio through SubCast (app 0.3.8+; older apps reject it). */
+  audioStream: (url: string) => invoke<string>("audio_stream", { url }),
   clearAudioCache: () => invoke<void>("clear_audio_cache"),
   openDataFolder: (kind: "downloads" | "models" | "data" | "tts-cache" | "tts-models") => invoke<void>("open_data_folder", { kind }),
   revealDownload: (episodeId: string) => invoke<void>("reveal_download", { episodeId }),
