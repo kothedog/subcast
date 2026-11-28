@@ -2,6 +2,17 @@ import { api, type CloudAsr, type Provider, type TtsRequest } from "./api";
 import { t, tk, type LangSetting } from "./i18n";
 
 export type TtsProtocol = TtsRequest["protocol"];
+export interface SyncSettings {
+  icloudEnabled: boolean;
+  icloudDir: string;
+  webdavEnabled: boolean;
+  webdavUrl: string;
+  webdavPath: string;
+  webdavUsername: string;
+  autoSync: boolean;
+  syncProgress: boolean;
+  syncContent: boolean;
+}
 export interface TtsVoice { id: string; name: string }
 export interface TtsService {
   id: string;
@@ -129,6 +140,8 @@ export interface Settings {
   learnAsked: boolean;
   /** Upload transcripts we make to the shared library (anonymous; reading shared ones is always on). */
   shareTranscripts: boolean;
+  /** Cross-device sync via iCloud Drive and/or WebDAV. */
+  sync: SyncSettings;
 }
 
 export type LearnLevel = "cet4" | "cet6" | "ky" | "ielts";
@@ -401,6 +414,18 @@ export const TTS_SERVICES: TtsService[] = [
   },
 ];
 
+export const DEFAULT_SYNC: SyncSettings = {
+  icloudEnabled: false,
+  icloudDir: "",
+  webdavEnabled: false,
+  webdavUrl: "",
+  webdavPath: "/SubCast",
+  webdavUsername: "",
+  autoSync: true,
+  syncProgress: true,
+  syncContent: true,
+};
+
 export const DEFAULTS: Settings = {
   providers: Object.fromEntries(PRESETS.map((p) => [p.id, p])),
   chatProvider: "deepseek",
@@ -445,6 +470,7 @@ export const DEFAULTS: Settings = {
   learnPauseCard: false,
   learnAsked: false,
   shareTranscripts: true,
+  sync: { ...DEFAULT_SYNC },
 };
 
 export async function loadSettings(): Promise<Settings> {
@@ -478,7 +504,8 @@ export async function loadSettings(): Promise<Settings> {
     ttsEngine = "system";
   }
   if (!ttsServices[ttsEngine]) ttsEngine = "system";
-  return migrate({ ...DEFAULTS, ...raw, providers, cloudAsr, ttsEngine, ttsServices });
+  const sync: SyncSettings = { ...DEFAULT_SYNC, ...(raw.sync ?? {}) };
+  return migrate({ ...DEFAULTS, ...raw, providers, cloudAsr, ttsEngine, ttsServices, sync });
 }
 
 export type SubtitleMode = "bilingual" | "original" | "translation" | "off";

@@ -32,7 +32,24 @@ pub fn open(path: &Path) -> Result<Connection> {
         CREATE TABLE IF NOT EXISTS tr_cache(key TEXT PRIMARY KEY, value TEXT NOT NULL);
         -- Time actually spent listening (playing, not seeking), per local day and hour, for 我的收听.
         CREATE TABLE IF NOT EXISTS listens(day TEXT NOT NULL, hour INTEGER NOT NULL, episode_id TEXT NOT NULL, show_id TEXT NOT NULL,
-            seconds REAL NOT NULL, translated INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(day, hour, episode_id));",
+            seconds REAL NOT NULL, translated INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(day, hour, episode_id));
+        CREATE TABLE IF NOT EXISTS sync_subs(
+            feed_url TEXT PRIMARY KEY,
+            deleted_at INTEGER,
+            updated_at INTEGER NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS sync_episodes(
+            episode_id TEXT PRIMARY KEY,
+            progress REAL NOT NULL DEFAULT 0,
+            watched_override TEXT,
+            updated_at INTEGER NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS sync_blobs(
+            episode_id TEXT NOT NULL,
+            kind TEXT NOT NULL,
+            updated_at INTEGER NOT NULL,
+            PRIMARY KEY(episode_id, kind)
+        );",
     )?;
     let has_deep: bool = conn.query_row("SELECT COUNT(*) FROM pragma_table_info('episodes') WHERE name='deep'", [], |r| r.get::<_, i64>(0))? > 0;
     if !has_deep {
@@ -52,6 +69,15 @@ pub fn upsert_show(conn: &Connection, s: &Show) -> Result<()> {
          link=excluded.link, description=excluded.description, updated_at=excluded.updated_at",
         params![s.id, s.kind, s.title, s.author, s.cover, s.feed_url, s.link, s.description, s.updated_at],
     )?;
+    if s.kind != "single" && !s.feed_url.trim().is_empty() {
+        let now = now_ms();
+        conn.execute(
+            "INSERT INTO sync_subs(feed_url, deleted_at, updated_at) VALUES(?1, NULL, ?2)
+             ON CONFLICT(feed_url) DO UPDATE SET deleted_at = NULL, updated_at = excluded.updated_at
+             WHERE sync_subs.deleted_at IS NOT NULL",
+            params![s.feed_url.trim(), now],
+        )?;
+    }
     Ok(())
 }
 
@@ -106,6 +132,9 @@ pub fn get_show(conn: &Connection, id: &str) -> Result<Option<Show>> {
 
 pub fn delete_show(conn: &Connection, id: &str, keep_episode_id: Option<&str>) -> Result<()> {
     let tx = conn.unchecked_transaction()?;
+    let meta: Option<(String, String)> = tx
+        .query_row("SELECT kind, feed_url FROM shows WHERE id=?1", [id], |r| Ok((r.get(0)?, r.get(1)?)))
+        .optional()?;
     if keep_episode_id.is_some() {
         if let Some(show) = get_show(&tx, id)? {
             set_blob(&tx, id, "show-json", &serde_json::to_string(&show)?)?;
@@ -117,6 +146,15 @@ pub fn delete_show(conn: &Connection, id: &str, keep_episode_id: Option<&str>) -
         params![id, keep_episode_id]
     )?;
     tx.execute("DELETE FROM shows WHERE id=?1", [id])?;
+    if let Some((kind, feed_url)) = meta {
+        if kind != "single" && !feed_url.trim().is_empty() {
+            let now = now_ms();
+            tx.execute(
+                "INSERT OR REPLACE INTO sync_subs(feed_url, deleted_at, updated_at) VALUES(?1, ?2, ?2)",
+                params![feed_url.trim(), now],
+            )?;
+        }
+    }
     tx.commit()?;
     Ok(())
 }
@@ -201,24 +239,44 @@ pub fn clear_show_videos(conn: &Connection, show_id: &str) -> Result<usize> {
 pub fn set_progress(conn: &Connection, id: &str, seconds: f64) -> Result<()> {
     let s = seconds.max(0.0);
     // Resuming playback past 5 s clears an explicit "unseen" reset so auto-tracking takes over again.
-    conn.execute(
+    let updated = conn.execute(
         "UPDATE episodes SET progress=?2, watched_override = CASE WHEN watched_override = 'unseen' AND ?2 > 5.0 THEN NULL ELSE watched_override END WHERE id=?1",
         params![id, s],
     )?;
+    if updated > 0 {
+        if let Some((progress, watched)) = conn
+            .query_row("SELECT progress, watched_override FROM episodes WHERE id=?1", [id], |r| {
+                Ok((r.get::<_, f64>(0)?, r.get::<_, Option<String>>(1)?))
+            })
+            .optional()?
+        {
+            conn.execute(
+                "INSERT OR REPLACE INTO sync_episodes(episode_id, progress, watched_override, updated_at) VALUES(?1, ?2, ?3, ?4)",
+                params![id, progress, watched, now_ms()],
+            )?;
+        }
+    }
     Ok(())
 }
 
 /// Sets or clears an explicit watched override ("done" | "unseen" | None). Marking "unseen" also resets progress to 0.
 pub fn set_watched(conn: &Connection, id: &str, watched: Option<&str>) -> Result<()> {
-    match watched {
-        Some("done") => {
-            conn.execute("UPDATE episodes SET watched_override = 'done' WHERE id = ?1", [id])?;
-        }
-        Some("unseen") => {
-            conn.execute("UPDATE episodes SET watched_override = 'unseen', progress = 0 WHERE id = ?1", [id])?;
-        }
-        _ => {
-            conn.execute("UPDATE episodes SET watched_override = NULL WHERE id = ?1", [id])?;
+    let updated = match watched {
+        Some("done") => conn.execute("UPDATE episodes SET watched_override = 'done' WHERE id = ?1", [id])?,
+        Some("unseen") => conn.execute("UPDATE episodes SET watched_override = 'unseen', progress = 0 WHERE id = ?1", [id])?,
+        _ => conn.execute("UPDATE episodes SET watched_override = NULL WHERE id = ?1", [id])?,
+    };
+    if updated > 0 {
+        if let Some((progress, watched_cur)) = conn
+            .query_row("SELECT progress, watched_override FROM episodes WHERE id=?1", [id], |r| {
+                Ok((r.get::<_, f64>(0)?, r.get::<_, Option<String>>(1)?))
+            })
+            .optional()?
+        {
+            conn.execute(
+                "INSERT OR REPLACE INTO sync_episodes(episode_id, progress, watched_override, updated_at) VALUES(?1, ?2, ?3, ?4)",
+                params![id, progress, watched_cur, now_ms()],
+            )?;
         }
     }
     Ok(())
@@ -226,10 +284,26 @@ pub fn set_watched(conn: &Connection, id: &str, watched: Option<&str>) -> Result
 
 /// Marks every unwatched episode of a show as watched ("done"); returns how many changed.
 pub fn mark_show_watched(conn: &Connection, show_id: &str) -> Result<usize> {
+    let select_sql = format!("SELECT e.id, e.progress FROM episodes e WHERE e.show_id = ?1 AND NOT {IS_WATCHED_SQL}");
+    let affected: Vec<(String, f64)> = {
+        let mut st = conn.prepare(&select_sql)?;
+        let rows = st.query_map([show_id], |r| Ok((r.get::<_, String>(0)?, r.get::<_, f64>(1)?)))?;
+        rows.collect::<rusqlite::Result<Vec<_>>>()?
+    };
     let sql = format!("UPDATE episodes SET watched_override = 'done' WHERE show_id = ?1 AND NOT {IS_WATCHED_SQL}");
     // Replace table alias `e.` with direct column names for UPDATE.
     let sql = sql.replace("e.", "");
-    Ok(conn.execute(&sql, [show_id])?)
+    let changed = conn.execute(&sql, [show_id])?;
+    if !affected.is_empty() {
+        let now = now_ms();
+        let mut st = conn.prepare(
+            "INSERT OR REPLACE INTO sync_episodes(episode_id, progress, watched_override, updated_at) VALUES(?1, ?2, 'done', ?3)",
+        )?;
+        for (id, progress) in affected {
+            st.execute(params![id, progress, now])?;
+        }
+    }
+    Ok(changed)
 }
 
 pub fn save_transcript(conn: &Connection, t: &Transcript) -> Result<()> {
@@ -274,8 +348,35 @@ pub fn raw_transcript_and_zh(conn: &Connection, id: &str) -> Result<Option<(Stri
         .optional()?)
 }
 
+pub fn is_synced_blob(episode_id: &str, kind: &str) -> bool {
+    if episode_id == "_app" {
+        return matches!(kind, "favorites" | "notes");
+    }
+    if matches!(episode_id, "_sync" | "learn" | "stats") {
+        return false;
+    }
+    matches!(
+        kind,
+        "summary"
+            | "summary-from"
+            | "summary-model"
+            | "deep-read"
+            | "article"
+            | "chat"
+            | "chat-archive"
+            | "highlights"
+            | "notes-zh"
+    )
+}
+
 pub fn set_blob(conn: &Connection, id: &str, kind: &str, data: &str) -> Result<()> {
     conn.execute("INSERT OR REPLACE INTO blobs(episode_id,kind,data) VALUES(?1,?2,?3)", params![id, kind, data])?;
+    if is_synced_blob(id, kind) {
+        conn.execute(
+            "INSERT OR REPLACE INTO sync_blobs(episode_id,kind,updated_at) VALUES(?1,?2,?3)",
+            params![id, kind, now_ms()],
+        )?;
+    }
     Ok(())
 }
 
@@ -295,6 +396,12 @@ where
         .optional()?;
     let next = f(cur)?;
     tx.execute("INSERT OR REPLACE INTO blobs(episode_id,kind,data) VALUES(?1,?2,?3)", params![id, kind, &next])?;
+    if is_synced_blob(id, kind) {
+        tx.execute(
+            "INSERT OR REPLACE INTO sync_blobs(episode_id,kind,updated_at) VALUES(?1,?2,?3)",
+            params![id, kind, now_ms()],
+        )?;
+    }
     tx.commit()?;
     Ok(next)
 }
@@ -345,6 +452,143 @@ pub fn listens_since(conn: &Connection, since: &str) -> Result<Vec<serde_json::V
         "duration": r.get::<_, f64>(11)?, "progress": r.get::<_, f64>(12)?, "published": r.get::<_, i64>(13)?,
     })))?;
     Ok(rows.collect::<std::result::Result<_, _>>()?)
+}
+
+#[derive(Clone, Debug)]
+pub struct SyncSubLedger {
+    pub feed_url: String,
+    pub deleted_at: Option<i64>,
+    pub updated_at: i64,
+}
+
+#[derive(Clone, Debug)]
+pub struct SyncEpLedger {
+    pub episode_id: String,
+    pub progress: f64,
+    pub watched_override: Option<String>,
+    pub updated_at: i64,
+}
+
+pub fn list_sync_subs(conn: &Connection) -> Result<Vec<SyncSubLedger>> {
+    let mut st = conn.prepare("SELECT feed_url, deleted_at, updated_at FROM sync_subs")?;
+    let rows = st.query_map([], |r| {
+        Ok(SyncSubLedger {
+            feed_url: r.get(0)?,
+            deleted_at: r.get(1)?,
+            updated_at: r.get(2)?,
+        })
+    })?;
+    Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+}
+
+pub fn upsert_sync_sub_raw(conn: &Connection, feed_url: &str, deleted_at: Option<i64>, updated_at: i64) -> Result<()> {
+    conn.execute(
+        "INSERT OR REPLACE INTO sync_subs(feed_url, deleted_at, updated_at) VALUES(?1, ?2, ?3)",
+        params![feed_url.trim(), deleted_at, updated_at],
+    )?;
+    Ok(())
+}
+
+pub fn prune_sync_sub_tombstones(conn: &Connection, cutoff_ms: i64) -> Result<usize> {
+    Ok(conn.execute(
+        "DELETE FROM sync_subs WHERE deleted_at IS NOT NULL AND deleted_at < ?1",
+        params![cutoff_ms],
+    )?)
+}
+
+/// Lists tracked episode progress/watched states, including legacy non-zero rows not yet in `sync_episodes`.
+pub fn list_sync_episodes(conn: &Connection) -> Result<Vec<SyncEpLedger>> {
+    let mut st = conn.prepare(
+        "SELECT episode_id, progress, watched_override, updated_at FROM sync_episodes
+         UNION ALL
+         SELECT e.id, e.progress, e.watched_override, 1
+         FROM episodes e
+         WHERE (e.progress > 0 OR e.watched_override IS NOT NULL)
+           AND NOT EXISTS (SELECT 1 FROM sync_episodes s WHERE s.episode_id = e.id)",
+    )?;
+    let rows = st.query_map([], |r| {
+        Ok(SyncEpLedger {
+            episode_id: r.get(0)?,
+            progress: r.get(1)?,
+            watched_override: r.get(2)?,
+            updated_at: r.get(3)?,
+        })
+    })?;
+    Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+}
+
+pub fn apply_sync_episode_raw(
+    conn: &Connection,
+    episode_id: &str,
+    progress: f64,
+    watched_override: Option<&str>,
+    updated_at: i64,
+) -> Result<()> {
+    let p = progress.max(0.0);
+    conn.execute(
+        "UPDATE episodes SET progress=?2, watched_override=?3 WHERE id=?1",
+        params![episode_id, p, watched_override],
+    )?;
+    conn.execute(
+        "INSERT OR REPLACE INTO sync_episodes(episode_id, progress, watched_override, updated_at) VALUES(?1, ?2, ?3, ?4)",
+        params![episode_id, p, watched_override, updated_at],
+    )?;
+    Ok(())
+}
+
+pub fn delete_show_with_tombstone(conn: &Connection, id: &str, feed_url: &str, deleted_at: i64) -> Result<()> {
+    delete_show(conn, id, None)?;
+    upsert_sync_sub_raw(conn, feed_url, Some(deleted_at), deleted_at)?;
+    Ok(())
+}
+
+#[derive(Clone, Debug)]
+pub struct SyncBlobRow {
+    pub episode_id: String,
+    pub kind: String,
+    pub data: String,
+    pub updated_at: i64,
+}
+
+pub fn list_synced_blobs(conn: &Connection) -> Result<Vec<SyncBlobRow>> {
+    let mut st = conn.prepare(
+        "SELECT b.episode_id, b.kind, b.data, COALESCE(s.updated_at, 1)
+         FROM blobs b
+         LEFT JOIN sync_blobs s ON s.episode_id = b.episode_id AND s.kind = b.kind
+         WHERE b.kind IN ('summary','summary-from','summary-model','deep-read','article','chat','chat-archive','highlights','notes-zh','favorites','notes')
+           AND b.data != ''",
+    )?;
+    let rows = st.query_map([], |r| {
+        Ok(SyncBlobRow {
+            episode_id: r.get(0)?,
+            kind: r.get(1)?,
+            data: r.get(2)?,
+            updated_at: r.get(3)?,
+        })
+    })?;
+    Ok(rows
+        .collect::<rusqlite::Result<Vec<_>>>()?
+        .into_iter()
+        .filter(|row| is_synced_blob(&row.episode_id, &row.kind))
+        .collect())
+}
+
+pub fn apply_sync_blob_raw(
+    conn: &Connection,
+    episode_id: &str,
+    kind: &str,
+    data: &str,
+    updated_at: i64,
+) -> Result<()> {
+    conn.execute(
+        "INSERT OR REPLACE INTO blobs(episode_id,kind,data) VALUES(?1,?2,?3)",
+        params![episode_id, kind, data],
+    )?;
+    conn.execute(
+        "INSERT OR REPLACE INTO sync_blobs(episode_id,kind,updated_at) VALUES(?1,?2,?3)",
+        params![episode_id, kind, updated_at],
+    )?;
+    Ok(())
 }
 
 #[cfg(test)]

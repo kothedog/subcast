@@ -9,6 +9,7 @@ import { api, errorText, type Episode, type Show, type ShowHit } from "../lib/ap
 import { date, duration, monthLabel } from "../lib/format";
 import { PICKS, TOPICS, deepPickFor, isSubscribed, pickName, pickSub, sameFeed, showName, subscribedShow, subscriptionVisible, type Pick, type Topic } from "../lib/picks";
 import { isChineseUi, t, useLang } from "../lib/i18n";
+import { scheduleAutoSync } from "../lib/sync";
 import { HOME_SHOW_FEED, showLinks } from "../lib/showLinks";
 import { AlsoOn, HomeShowBanner, YtButton, usePromo } from "./YtPromo";
 import { useShowName, useZh } from "../lib/zh";
@@ -605,6 +606,7 @@ export function ShowView({ id }: { id: string }) {
     await api.removeShow(id);
     invalidateEpisodes(id);
     await reloadShows();
+    scheduleAutoSync();
     go({ kind: "latest" });
   };
   const startRename = () => {
@@ -825,6 +827,7 @@ export function DiscoverView() {
         return;
       }
       setOptimistic((prev) => dropInput(prev, input));
+      scheduleAutoSync();
       notify(t("已订阅「{name}」", { name: title }));
     } catch (err) {
       setOptimistic((prev) => dropInput(prev, input));
@@ -839,6 +842,7 @@ export function DiscoverView() {
     try {
       await api.removeShow(sub.id);
       await reloadShows();
+      scheduleAutoSync();
       setOptimistic((prev) => dropInput(prev, p.input));
       notify(t("已取消订阅「{name}」", { name: pickName(p) }));
     } catch (err) { notify(errorText(err)); } finally { setBusyInputs((prev) => dropInput(prev, p.input)); }
@@ -893,6 +897,7 @@ export function ChannelView({ input }: { input: string }) {
       const r = await api.addSubscription(input);
       await reloadShows();
       if (!r.show || !subscriptionVisible(input, r.show, useStore.getState().shows)) { notify(t("没有订上，再试一次")); return; }
+      scheduleAutoSync();
       notify(t("已订阅「{name}」", { name: pick ? pickName(pick) : r.show.title }));
       go({ kind: "show", id: r.show.id });
     } catch (e) { notify(errorText(e)); } finally { setBusy(false); }

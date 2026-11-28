@@ -1,6 +1,6 @@
 [package]
 name = "subcast"
-version = "0.3.11"
+version = "0.3.12"
 license = "AGPL-3.0-only"
 description = "SubCast · 声渡 — overseas podcasts and YouTube with bilingual subtitles and AI Q&A"
 authors = ["Qiaomu"]

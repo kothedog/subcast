@@ -13,7 +13,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use subcast_core::{
     agents, align, anki, asr, cloud, db, fastclip, feeds, import, llm, local_tts, offline, ops,
-    qiaomu, shadow, speech, videoclip, CoreCtx, Episode, ProgressEvent, ProgressSink, Show,
+    qiaomu, shadow, speech, sync, videoclip, CoreCtx, Episode, ProgressEvent, ProgressSink, Show,
     Transcript,
 };
 use tauri::{AppHandle, Emitter, Manager, State};
@@ -891,6 +891,25 @@ fn export_opml(state: State<'_, AppState>) -> Res<String> {
     ops::export_opml(&state.ctx, None).map_err(e)
 }
 
+#[tauri::command(async)]
+fn sync_status(state: State<'_, AppState>, custom_dir: Option<String>) -> Res<sync::SyncStatus> {
+    sync::sync_status(&state.ctx, custom_dir.as_deref()).map_err(e)
+}
+
+#[tauri::command]
+async fn sync_webdav_test(url: String, path: String, username: String, password: Option<String>) -> Res<String> {
+    guard::guarded(async move {
+        sync::test_webdav(&url, &path, &username, password.as_deref()).await.map_err(e)
+    }).await
+}
+
+#[tauri::command]
+async fn sync_run(state: State<'_, AppState>, target: Option<String>) -> Res<sync::SyncReport> {
+    guard::guarded(async move {
+        sync::sync_run(&state.ctx, target.as_deref()).await.map_err(e)
+    }).await
+}
+
 #[tauri::command]
 async fn local_agents() -> Res<Vec<agents::Found>> {
     guard::guarded(async move {
@@ -1286,7 +1305,8 @@ pub fn run() {
             shadow_start, shadow_stop, shadow_clear, shadow_ready, shadow_hear, open_mic_settings,
             download_episode, list_downloads, delete_download, clear_downloads, align_audio, save_time_map, list_audio_cache, audio_stream, clear_audio_cache, storage_info, open_data_folder, reveal_download, clear_temp, full_notes, tts_synthesize, tts_system_voices, clear_tts_cache, local_tts_status, local_tts_install, local_tts_delete,
             video_clip_env, video_clip_warm, video_clip_prepare, video_clip_render, reveal_file,
-            db_data_version, cli_status, cli_install, mcp_targets, mcp_connect, mcp_disconnect
+            db_data_version, cli_status, cli_install, mcp_targets, mcp_connect, mcp_disconnect,
+            sync_status, sync_webdav_test, sync_run
         ]))
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

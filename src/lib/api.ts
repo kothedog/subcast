@@ -22,6 +22,10 @@ export interface CliStatus {
 
 /** An AI agent on this computer and whether it can call SubCast (its MCP server). */
 export interface McpTarget { id: string; name: string; icon: string; connected: boolean; outdated: boolean; config: string }
+export interface ICloudStatus { available: boolean; path: string; defaultPath: string; hasFile: boolean; note?: string | null }
+export interface BackendSyncSummary { backend: string; syncedAt: number; addedShows: number; removedShows: number; updatedEpisodes: number; updatedContent: number; uploaded: boolean; error?: string | null }
+export interface SyncStatus { icloud: ICloudStatus; lastIcloud?: BackendSyncSummary | null; lastWebdav?: BackendSyncSummary | null }
+export interface SyncReport { results: BackendSyncSummary[]; showsChanged: boolean; settingsChanged: boolean; blobsChanged: boolean }
 
 export interface ShowHit { episode: Episode; field: "title" | "notes" | "transcript"; snippet: string; time?: number | null }
 
@@ -62,6 +66,11 @@ export interface Episode {
   deep?: boolean;
   /** User/ended override: "done" | "unseen" | null (auto from progress). */
   watchedOverride?: "done" | "unseen" | null;
+}
+
+let blobMutatedHook: ((episodeId: string, kind: string) => void) | null = null;
+export function setBlobMutatedHook(fn: (episodeId: string, kind: string) => void) {
+  blobMutatedHook = fn;
 }
 
 export interface Segment { start: number; end: number; text: string }
@@ -160,7 +169,10 @@ export const api = {
   downloadModel: (id: string, mirrorFirst: boolean) => invoke<void>("download_model", { id, mirrorFirst }),
   deleteModel: (id: string) => invoke<void>("delete_model", { id }),
   getBlob: (episodeId: string, kind: string) => invoke<string | null>("get_blob", { episodeId, kind }),
-  setBlob: (episodeId: string, kind: string, data: string) => invoke<void>("set_blob", { episodeId, kind, data }),
+  setBlob: async (episodeId: string, kind: string, data: string) => {
+    await invoke<void>("set_blob", { episodeId, kind, data });
+    blobMutatedHook?.(episodeId, kind);
+  },
   getSettings: () => invoke<unknown>("get_settings"),
   setSettings: (settings: unknown) => invoke<void>("set_settings", { settings }),
   setApiKey: (provider: string, key: string) => invoke<void>("set_api_key", { provider, key }),
@@ -233,6 +245,9 @@ export const api = {
   mcpTargets: () => invoke<McpTarget[]>("mcp_targets"),
   mcpConnect: (id: string) => invoke<McpTarget>("mcp_connect", { id }),
   mcpDisconnect: (id: string) => invoke<McpTarget>("mcp_disconnect", { id }),
+  syncStatus: (customDir?: string) => invoke<SyncStatus>("sync_status", { customDir }),
+  syncWebdavTest: (url: string, path: string, username: string, password?: string) => invoke<string>("sync_webdav_test", { url, path, username, password }),
+  syncRun: (target?: "icloud" | "webdav") => invoke<SyncReport>("sync_run", { target }),
 };
 
 let llmCounter = 0;

@@ -5,6 +5,7 @@ import { api, errorText, type SearchResult } from "../lib/api";
 import { ImportPanel } from "./ImportPanel";
 import { useStore } from "../store";
 import { t } from "../lib/i18n";
+import { scheduleAutoSync } from "../lib/sync";
 import { SearchArt } from "./Illustrations";
 import { Modal, SearchRow, looksLikeLink } from "./Chrome";
 import { sameFeed } from "../lib/picks";
@@ -29,7 +30,7 @@ export function AddDialog() {
     try {
       const r = await api.addSubscription(value);
       close();
-      if (r.show) { await reloadShows(); notify(t("已订阅「{name}」", { name: r.show.title })); go({ kind: "show", id: r.show.id }); }
+      if (r.show) { await reloadShows(); scheduleAutoSync(); notify(t("已订阅「{name}」", { name: r.show.title })); go({ kind: "show", id: r.show.id }); }
       else if (r.episode) openEpisode(r.episode);
     } catch (err) { setError(errorText(err)); } finally { setBusy(false); setAdding(null); }
   };

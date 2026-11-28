@@ -10,6 +10,7 @@ import { showAliasPatch } from "../lib/settings";
 import { useStore } from "../store";
 import { isChineseUi, t } from "../lib/i18n";
 import { ask } from "../lib/confirm";
+import { scheduleAutoSync } from "../lib/sync";
 import { useNameMatch, useShowName } from "../lib/zh";
 import { Modal } from "./Chrome";
 import { showIcon } from "./Lists";
@@ -58,6 +59,7 @@ export function ManageSubs() {
     }
     const st = useStore.getState();
     await st.reloadShows();
+    if (done - failed > 0) scheduleAutoSync();
     if (st.view.kind === "show" && ids.includes(st.view.id)) st.go({ kind: "latest" });
     st.notify(failed ? t("已取消订阅 {n} 个，{f} 个没有成功", { n: done - failed, f: failed }) : t("已取消订阅 {n} 个", { n: done }));
     setProgress(null);
@@ -93,6 +95,7 @@ export function ManageSubs() {
             ? <span className="small muted"><Loader2 size={13} className="spin" /> {t("正在取消订阅 {done} / {total}", { done: progress.done, total: progress.total })}</span>
             : isChineseUi() && <NameToggle on={!translateNames} onChange={(keep) => void saveSettings({ translateShowNames: !keep })} />}
           <div className="spacer" />
+          <button className="btn ghost" onClick={() => { set({ manageOpen: false }); useStore.getState().openSettings("sync"); }} disabled={progress != null}>{t("跨设备同步…")}</button>
           <button className="btn ghost" onClick={close} disabled={progress != null}>{t("关闭")}</button>
           <button className="btn danger-btn" onClick={() => void remove()} disabled={!picked.size || progress != null}>{picked.size ? t("取消订阅 {n} 个", { n: picked.size }) : t("取消订阅")}</button>
         </div>

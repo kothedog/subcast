@@ -26,6 +26,7 @@ import { ShortcutSettings } from "./ShortcutSettings";
 import { ReadingSettings } from "./ReadingSettings";
 import { LearnSettings } from "./LearnSettings";
 import { TtsSettings } from "./TtsSettings";
+import { SyncSettings } from "./SyncSettings";
 import { DOWNLOAD_PAGE, checkForUpdate, hasUpdate, installUpdate, useUpdate } from "../lib/updater";
 import { DefaultButton, KeyField, KeyRow, NO_AUTO } from "./KeyField";
 
@@ -134,13 +135,14 @@ export function SettingsView() {
   const { settings, saveSettings, set, notify, settingsSection, settingsNonce } = useStore(useShallow((s) => ({ settings: s.settings, saveSettings: s.saveSettings, set: s.set, notify: s.notify, settingsSection: s.settingsSection, settingsNonce: s.settingsNonce })));
   type Section = "subtitles" | "ai" | "tts" | "general" | "learn" | "about";
   // Old section names (links from elsewhere in the app) land in their new home.
-  const LEGACY: Record<string, Section> = { overview: "subtitles", reading: "subtitles", asr: "subtitles", model: "ai", tts: "tts", shortcuts: "general", storage: "general", agents: "general", network: "general", general: "general", about: "about", subtitles: "subtitles", ai: "ai", learn: "learn" };
+  const LEGACY: Record<string, Section> = { overview: "subtitles", reading: "subtitles", asr: "subtitles", model: "ai", tts: "tts", shortcuts: "general", storage: "general", agents: "general", network: "general", sync: "general", general: "general", about: "about", subtitles: "subtitles", ai: "ai", learn: "learn" };
   const [section, setSection] = useState<Section>(LEGACY[settingsSection ?? "subtitles"] ?? "subtitles");
   // Asked for a section while the page is already open (a "去设置" link): go there.
   useEffect(() => {
     if (settingsSection) setSection(LEGACY[settingsSection] ?? "subtitles");
     if (settingsSection === "agents") window.setTimeout(() => document.getElementById("agent-connect")?.scrollIntoView({ behavior: "smooth", block: "start" }), 80);
     if (settingsSection === "network") window.setTimeout(() => document.getElementById("network")?.scrollIntoView({ behavior: "smooth", block: "center" }), 80);
+    if (settingsSection === "sync") window.setTimeout(() => document.getElementById("sync-section")?.scrollIntoView({ behavior: "smooth", block: "start" }), 80);
     if (settingsSection === "shortcuts") {
       setShowKeys(true);
       window.setTimeout(() => document.getElementById("shortcuts-section")?.scrollIntoView({ behavior: "smooth", block: "start" }), 80);
@@ -264,6 +266,7 @@ export function SettingsView() {
                   <button className="btn sm" onClick={() => { set({ addOpen: true, addTab: "import" }); }}>{t("导入订阅…")}</button>
                   <button className="btn sm" onClick={async () => { try { const path = await api.exportOpml(); notify(t("已导出到「下载」：{name}", { name: path.split(/[\\/]/).pop() ?? "" })); void revealItemInDir(path).catch(() => {}); } catch (e) { notify(errorText(e)); } }}>{t("导出 OPML")}</button>
                 </div>
+                <SyncSettings />
               </section>
               <section className="setup-block">
                 <p className="setup-title">{t("网络")}</p>
