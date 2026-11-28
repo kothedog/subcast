@@ -162,7 +162,7 @@ pub async fn resolve_or_ingest_episode(ctx: &CoreCtx, reference: &str) -> Result
                 .map_err(|e| CliError::not_found(format!("找不到本地文件: {e}")))?;
             let path_str = canonical.to_string_lossy().into_owned();
             let ep_id = subcast_core::short_hash(&format!("local:{path_str}"), 20);
-            if let Ok(Some(existing)) = db::get_episode(&ctx.db.lock().unwrap(), &ep_id) {
+            if let Ok(Some(existing)) = db::get_episode(&ctx.db.lock(), &ep_id) {
                 return Ok(existing);
             }
             let ep = Episode {
@@ -178,7 +178,7 @@ pub async fn resolve_or_ingest_episode(ctx: &CoreCtx, reference: &str) -> Result
                 audio_url: Some(path_str),
                 ..Default::default()
             };
-            db::upsert_episodes(&mut ctx.db.lock().unwrap(), std::slice::from_ref(&ep))?;
+            db::upsert_episodes(&mut ctx.db.lock(), std::slice::from_ref(&ep))?;
             return Ok(ep);
         }
         // Never subscribes: an episode link is kept as a standalone episode; a show or channel link is previewed
@@ -248,7 +248,7 @@ pub async fn ensure_transcript(
     allow_shared: bool,
     allow_youtube: bool,
 ) -> Result<Transcript, CliError> {
-    if let Some(t) = db::get_transcript(&ctx.db.lock().unwrap(), &ep.id)? {
+    if let Some(t) = db::get_transcript(&ctx.db.lock(), &ep.id)? {
         return Ok(t);
     }
     if allow_shared {

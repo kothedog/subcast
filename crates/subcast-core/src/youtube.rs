@@ -7,18 +7,18 @@ use anyhow::{anyhow, Result};
 use serde_json::{json, Value};
 
 /// Overrides from the remote config (`youtubeClients`), so a YouTube change can be answered without a release.
-static REMOTE_CLIENTS: std::sync::RwLock<Vec<(String, String, Option<u32>)>> = std::sync::RwLock::new(Vec::new());
+static REMOTE_CLIENTS: parking_lot::RwLock<Vec<(String, String, Option<u32>)>> = parking_lot::RwLock::new(Vec::new());
 
 /// `[{"name": "ANDROID", "version": "20.10.38", "sdk": 34}, …]`; ignored when empty or malformed.
 pub fn set_clients(v: &Value) {
     let list: Vec<(String, String, Option<u32>)> = v.as_array().into_iter().flatten().filter_map(|c| {
         Some((c["name"].as_str()?.to_string(), c["version"].as_str()?.to_string(), c["sdk"].as_u64().map(|n| n as u32)))
     }).collect();
-    if !list.is_empty() { *REMOTE_CLIENTS.write().unwrap() = list; }
+    if !list.is_empty() { *REMOTE_CLIENTS.write() = list; }
 }
 
 fn clients() -> Vec<(String, String, Option<u32>)> {
-    let remote = REMOTE_CLIENTS.read().unwrap().clone();
+    let remote = REMOTE_CLIENTS.read().clone();
     if !remote.is_empty() { return remote; }
     CLIENTS.iter().map(|(n, v, s)| (n.to_string(), v.to_string(), *s)).collect()
 }

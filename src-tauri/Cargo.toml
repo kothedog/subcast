@@ -1,6 +1,6 @@
 [package]
 name = "subcast"
-version = "0.3.8"
+version = "0.3.11"
 license = "AGPL-3.0-only"
 description = "SubCast · 声渡 — overseas podcasts and YouTube with bilingual subtitles and AI Q&A"
 authors = ["Qiaomu"]
@@ -14,6 +14,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
+parking_lot = "0.12"
 subcast-core = { path = "../crates/subcast-core" }
 tauri = { version = "2", features = ["protocol-asset", "macos-proxy"] }
 tauri-plugin-opener = "2"

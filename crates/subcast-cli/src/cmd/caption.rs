@@ -90,7 +90,7 @@ pub async fn run_caption(ctx: &CoreCtx, args: CaptionArgs, out: Out) -> Result<(
     let tr = ensure_transcript(ctx, &ep, true, true).await?;
     let zh = ai::load_episode_zh(ctx, &ep.id);
     let tmap: Option<align::TimeMap> = if args.align_clock {
-        db::get_blob(&ctx.db.lock().unwrap(), &ep.id, "tmap")?
+        db::get_blob(&ctx.db.lock(), &ep.id, "tmap")?
             .and_then(|s| serde_json::from_str(&s).ok())
     } else {
         None
@@ -160,7 +160,7 @@ pub async fn run_transcribe(
 
     let ep = resolve_or_ingest_episode(ctx, &args.target).await?;
     if !args.force {
-        if let Some(existing) = db::get_transcript(&ctx.db.lock().unwrap(), &ep.id)? {
+        if let Some(existing) = db::get_transcript(&ctx.db.lock(), &ep.id)? {
             out.ok(&existing, || {
                 println!(
                     "Transcript already exists ({}, {} segments). Pass --force to re-transcribe.",

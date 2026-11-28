@@ -12,7 +12,7 @@ use image::{imageops::FilterType, DynamicImage, GenericImageView, RgbaImage};
 use once_cell::sync::Lazy;
 use qrcode::QrCode;
 use std::path::Path;
-use std::sync::Mutex;
+use parking_lot::Mutex;
 use tiny_skia::{
     FillRule, GradientStop, LinearGradient, Paint, PathBuilder, Pixmap, Point,
     PremultipliedColorU8, Rect, SpreadMode, Transform,
@@ -339,7 +339,7 @@ fn draw_rich_text_block(
         return 0.0;
     }
     let spans = parse_rich_spans(text);
-    let mut guard = FONT_SYS.lock().unwrap();
+    let mut guard = FONT_SYS.lock();
     let FontState { fonts, swash } = &mut *guard;
 
     let family = if style.serif { Family::Serif } else { Family::SansSerif };
@@ -536,7 +536,7 @@ fn measure_rich_text_lines(
         return (0, 0.0, 0.0);
     }
     let clean = text.replace(['【', '】'], "");
-    let mut guard = FONT_SYS.lock().unwrap();
+    let mut guard = FONT_SYS.lock();
     let fonts = &mut guard.fonts;
     let family = if serif { Family::Serif } else { Family::SansSerif };
     let mut buffer = Buffer::new(fonts, Metrics::new(size, line_height));

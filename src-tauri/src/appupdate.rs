@@ -7,7 +7,7 @@ use crate::net;
 use anyhow::{anyhow, Result};
 use futures_util::StreamExt;
 use serde::Serialize;
-use std::sync::Mutex;
+use parking_lot::Mutex;
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter};
 use tauri_plugin_updater::{Update, UpdaterExt};
@@ -22,8 +22,8 @@ static PENDING: Mutex<Option<(Update, Option<Vec<u8>>)>> = Mutex::new(None);
 pub struct Found { pub version: String, pub notes: Option<String>, pub ready: bool }
 
 pub async fn check(app: &AppHandle) -> Result<Option<Found>> {
-    let Some(u) = app.updater()?.check().await? else { *PENDING.lock().unwrap() = None; return Ok(None) };
-    let mut p = PENDING.lock().unwrap();
+    let Some(u) = app.updater()?.check().await? else { *PENDING.lock() = None; return Ok(None) };
+    let mut p = PENDING.lock();
     // Already downloaded this version: keep the bytes.
     let ready = matches!(&*p, Some((old, Some(_))) if old.version == u.version);
     if !ready { *p = Some((u.clone(), None)); }
@@ -74,7 +74,7 @@ async fn fetch(app: &AppHandle, url: &str, source: &str) -> Result<Vec<u8>> {
 
 /// Downloads and verifies the pending update from the faster source (the other one if that fails).
 pub async fn download(app: &AppHandle) -> Result<()> {
-    let u = match &*PENDING.lock().unwrap() {
+    let u = match &*PENDING.lock() {
         Some((_, Some(_))) => return Ok(()),
         Some((u, None)) => u.clone(),
         None => return Err(anyhow!("没有可下载的新版本")),
@@ -89,7 +89,7 @@ pub async fn download(app: &AppHandle) -> Result<()> {
         match fetch(app, &url, source).await {
             Ok(bytes) => {
                 u.verify(&bytes).map_err(|e| anyhow!("新版本的签名校验没有通过：{e}"))?;
-                let mut p = PENDING.lock().unwrap();
+                let mut p = PENDING.lock();
                 if let Some((cur, slot)) = p.as_mut() { if cur.version == u.version { *slot = Some(bytes); } }
                 return Ok(());
             }
@@ -101,10 +101,10 @@ pub async fn download(app: &AppHandle) -> Result<()> {
 
 /// Installs the downloaded update and restarts the app.
 pub fn install(app: &AppHandle) -> Result<()> {
-    let taken = PENDING.lock().unwrap().take();
+    let taken = PENDING.lock().take();
     let (u, bytes) = match taken {
         Some((u, Some(b))) => (u, b),
-        other => { *PENDING.lock().unwrap() = other; return Err(anyhow!("新版本还没有下载好")) }
+        other => { *PENDING.lock() = other; return Err(anyhow!("新版本还没有下载好")) }
     };
     u.install(&bytes)?;
     app.restart();

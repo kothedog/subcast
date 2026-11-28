@@ -135,7 +135,7 @@ pub async fn run_shows(ctx: &CoreCtx, args: ShowsArgs, out: Out) -> Result<(), C
     let action = args.action.unwrap_or(ShowsAction::List);
     match action {
         ShowsAction::List => {
-            let shows = db::list_shows(&ctx.db.lock().unwrap())?;
+            let shows = db::list_shows(&ctx.db.lock())?;
             out.ok(&shows, || {
                 if shows.is_empty() {
                     println!("No subscriptions yet. Try `subcast picks` or `subcast add <url>`.");
@@ -158,7 +158,7 @@ pub async fn run_shows(ctx: &CoreCtx, args: ShowsArgs, out: Out) -> Result<(), C
                     );
                 });
             } else if let Some(q) = show {
-                let target = resolver::resolve_show(&ctx.db.lock().unwrap(), &q)?;
+                let target = resolver::resolve_show(&ctx.db.lock(), &q)?;
                 let refreshed = ops::refresh_show(ctx, &target.id).await?;
                 out.ok(&refreshed, || {
                     println!("Refreshed {} ({})", refreshed.title, refreshed.id);
@@ -166,14 +166,14 @@ pub async fn run_shows(ctx: &CoreCtx, args: ShowsArgs, out: Out) -> Result<(), C
             }
         }
         ShowsAction::Remove { show, keep_episode } => {
-            let target = resolver::resolve_show(&ctx.db.lock().unwrap(), &show)?;
-            db::delete_show(&ctx.db.lock().unwrap(), &target.id, keep_episode.as_deref())?;
+            let target = resolver::resolve_show(&ctx.db.lock(), &show)?;
+            db::delete_show(&ctx.db.lock(), &target.id, keep_episode.as_deref())?;
             out.ok(&json!({ "removed": target.id, "title": target.title }), || {
                 println!("Removed subscription: {} ({})", target.title, target.id);
             });
         }
         ShowsAction::Search { show, query } => {
-            let target = resolver::resolve_show(&ctx.db.lock().unwrap(), &show)?;
+            let target = resolver::resolve_show(&ctx.db.lock(), &show)?;
             let hits = ops::search_show(ctx, &target.id, &query).await?;
             out.ok(&hits, || {
                 if hits.is_empty() {

@@ -2,7 +2,7 @@
 //! With no proxy configured, the system proxy (macOS/Windows settings, or HTTP(S)_PROXY) is used.
 use anyhow::{anyhow, Result};
 use once_cell::sync::Lazy;
-use std::sync::RwLock;
+use parking_lot::RwLock;
 use std::time::Duration;
 
 pub const UA: &str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) SubCast/0.1";
@@ -34,12 +34,12 @@ fn build(proxy: &str) -> Result<reqwest::Client> {
 
 pub fn set_proxy(proxy: &str) -> Result<()> {
     let client = build(proxy)?;
-    *CLIENT.write().unwrap() = (proxy.trim().to_string(), client);
+    *CLIENT.write() = (proxy.trim().to_string(), client);
     Ok(())
 }
 
 pub fn proxy() -> String {
-    CLIENT.read().unwrap().0.clone()
+    CLIENT.read().0.clone()
 }
 
 /// The proxy for programs SubCast starts (yt-dlp, local AI agents): the one set in SubCast, else the system's.
@@ -49,9 +49,10 @@ pub fn effective_proxy() -> String {
     let own = proxy();
     if !own.is_empty() { return own; }
     static CACHE: Lazy<RwLock<(Option<std::time::Instant>, String)>> = Lazy::new(|| RwLock::new((None, String::new())));
-    if let Some(at) = CACHE.read().unwrap().0 { if at.elapsed().as_secs() < 30 { return CACHE.read().unwrap().1.clone(); } }
+    // One read: parking_lot's RwLock is writer-first, so a second read inside the first can deadlock.
+    { let c = CACHE.read(); if c.0.is_some_and(|at| at.elapsed().as_secs() < 30) { return c.1.clone(); } }
     let found = system_proxy().unwrap_or_default();
-    *CACHE.write().unwrap() = (Some(std::time::Instant::now()), found.clone());
+    *CACHE.write() = (Some(std::time::Instant::now()), found.clone());
     found
 }
 
@@ -87,7 +88,7 @@ fn system_proxy() -> Option<String> {
 }
 
 pub fn client() -> reqwest::Client {
-    CLIENT.read().unwrap().1.clone()
+    CLIENT.read().1.clone()
 }
 
 /// A client that ignores every proxy, for a second try when the proxied route fails.

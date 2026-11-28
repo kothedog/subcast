@@ -2,7 +2,8 @@
 // subtitle bands, placed by one geometry that the export (videoclip.rs `Frame`) uses as well.
 import type { Segment } from "./api";
 import { type Cue, type SubContent } from "./subexport";
-import { isCjk, sameChars, shortLines, splitInto } from "./clipLines";
+import { isCjk, sameChars, shortLines, splitInto, type PairLines } from "./clipLines";
+import { pairBySentence, tidyLine } from "./subtitleText";
 import logoUrl from "../assets/logo.png";
 
 /** Output shape: the source's own, or a platform size. */
@@ -93,9 +94,9 @@ export function clipGeometry(aspect: ClipAspect, fit: ClipFit, srcW = 1920, srcH
   return { W, H, fit: "card", video: { x: even((W - vw) / 2), y, w: vw, h: vh }, vertical, cropBox };
 }
 
-/** Clip subtitles relative to `clipStart` (0-based): one short line per cue (bilingual: the translation split to
- *  match), timed by length within its segment, the way short-video subtitles read. `lineBreaks` holds model-made
- *  lines (by segment index) for the CJK text; anything else is split here. */
+/** Clip subtitles relative to `clipStart` (0-based): one short line per cue, timed by length within its segment,
+ *  the way short-video subtitles read. `lineBreaks` holds model-made lines (by segment index) for the CJK text;
+ *  anything else is split here. Bilingual cues pair by meaning (`bilingualParts`), never by length alone. */
 export function buildClipCues(
   segments: Segment[],
   zhOverrides: (string | null | undefined)[],
@@ -106,6 +107,7 @@ export function buildClipCues(
   content: SubContent,
   lineBreaks?: Record<number, string[]>,
   maxCjk = 14,
+  pairBreaks?: Record<number, PairLines>,
 ): Cue[] {
   const dur = Math.max(0.5, clipEnd - clipStart);
   const raw: Cue[] = [];
@@ -116,19 +118,25 @@ export function buildClipCues(
     const tr = zhOverrides[i]?.trim() || "";
     const lead = content === "translation" && tr ? tr : orig;
     if (!lead) continue;
-    const model = lineBreaks?.[i];
-    const lines = model && sameChars(model, lead) ? model : shortLines(lead, maxCjk);
-    if (!lines.length) continue;
-    const second = content === "bilingual" && tr && lead === orig ? splitInto(tr, lines.length) : [];
-    const total = lines.reduce((n, l) => n + l.length, 0) || 1;
+    const isZhLead = lead === tr;
+    let rows: { orig: string; zh?: string }[];
+    if (content === "bilingual" && tr && !isZhLead && tr !== orig) {
+      rows = bilingualParts(orig, tr, maxCjk, pairBreaks?.[i]);
+    } else {
+      const model = lineBreaks?.[i];
+      const lines = model && sameChars(model, lead) ? model : shortLines(lead, maxCjk);
+      rows = lines.map((line) => (isZhLead ? { orig: "", zh: line } : { orig: line }));
+    }
+    if (!rows.length) continue;
+    const size = (r: { orig: string; zh?: string }) => (r.orig || r.zh || "").length;
+    const total = rows.reduce((n, r) => n + size(r), 0) || 1;
     let acc = 0;
-    lines.forEach((line, k) => {
+    for (const r of rows) {
       const s = seg.start + (seg.end - seg.start) * (acc / total);
-      acc += line.length;
+      acc += size(r);
       const e = seg.start + (seg.end - seg.start) * (acc / total);
-      const isZhLead = lead === tr;
-      raw.push({ start: s, end: e, orig: isZhLead ? "" : line, zh: isZhLead ? line : second[k] || undefined });
-    });
+      raw.push({ start: s, end: e, orig: r.orig, zh: r.zh || undefined });
+    }
   }
 
   const out: Cue[] = [];
@@ -150,6 +158,29 @@ export function buildClipCues(
     out.push({ start, end, orig: c.orig, zh: c.zh });
   }
   return out;
+}
+
+/** A bilingual segment as cue rows whose two lines mean the same thing: the model's split when it kept both texts
+ *  whole, else one row per sentence when both sides have the same sentences and each fits one line. A longer
+ *  pair is split by length: the CJK side at word boundaries, the other side between words in proportion. */
+function bilingualParts(orig: string, tr: string, maxCjk: number, model?: PairLines): { orig: string; zh?: string }[] {
+  if (model && model.orig.length === model.tr.length && sameChars(model.orig, orig) && sameChars(model.tr, tr)) {
+    return model.orig.map((o, k) => ({ orig: o, zh: model.tr[k] })).filter((r) => r.orig || r.zh);
+  }
+  // One line per side: the renderer wraps CJK by pixel width, character by character, so anything longer would
+  // break mid-word again (or lose its tail past two lines).
+  const fits = (text: string) => text.length <= (isCjk(text) ? maxCjk : Math.round(maxCjk * 2.3));
+  const rows: { orig: string; zh?: string }[] = [];
+  for (const p of pairBySentence(orig, tr) ?? [{ orig, tr }]) {
+    if (fits(p.orig) && fits(p.tr)) { rows.push({ orig: tidyLine(p.orig), zh: tidyLine(p.tr) }); continue; }
+    // The CJK side leads (its splitter breaks only between words); the other side splits into as many parts
+    // between words. The parts may not line up exactly, but no word is cut in either language.
+    const trLeads = isCjk(p.tr) && !isCjk(p.orig);
+    const lines = shortLines(trLeads ? p.tr : p.orig, maxCjk);
+    const second = splitInto(trLeads ? p.orig : p.tr, lines.length, lines.map((l) => l.length));
+    lines.forEach((line, k) => rows.push(trLeads ? { orig: second[k] || "", zh: line } : { orig: line, zh: second[k] || undefined }));
+  }
+  return rows.filter((r) => r.orig || r.zh);
 }
 
 function wrapText(g: CanvasRenderingContext2D, text: string, maxW: number, maxLines: number): string[] {

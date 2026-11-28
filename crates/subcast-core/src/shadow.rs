@@ -8,7 +8,8 @@ use anyhow::{anyhow, Context, Result};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
-use std::sync::{mpsc, Arc, Mutex};
+use parking_lot::Mutex;
+use std::sync::{mpsc, Arc};
 
 const KEEP_SECS: usize = 30;
 
@@ -38,7 +39,7 @@ pub fn start(on_level: impl Fn(f32) + Send + 'static) -> Result<()> {
             let keep = rate as usize * KEEP_SECS;
             let push = move |mono: &mut dyn Iterator<Item = f32>| {
                 let mut peak = 0f32;
-                let mut g = b.lock().unwrap();
+                let mut g = b.lock();
                 for s in mono { peak = peak.max(s.abs()); g.push(s); }
                 if g.len() > keep { let cut = g.len() - keep; g.drain(..cut); }
                 // Highest peak since the level was last read.
@@ -71,24 +72,24 @@ pub fn start(on_level: impl Fn(f32) + Send + 'static) -> Result<()> {
         drop(stream);
     });
     let rate = ready_rx.recv().map_err(|_| anyhow!("麦克风打不开"))??;
-    *MIC.lock().unwrap() = Some(Mic { stop: stop_tx, buf, rate });
+    *MIC.lock() = Some(Mic { stop: stop_tx, buf, rate });
     Ok(())
 }
 
 pub fn stop() {
-    if let Some(m) = MIC.lock().unwrap().take() { let _ = m.stop.send(()); }
+    if let Some(m) = MIC.lock().take() { let _ = m.stop.send(()); }
 }
 
 /// Forgets what was recorded so far: called when the listener's turn starts (the speaker was playing until now).
 pub fn clear() {
-    if let Some(m) = MIC.lock().unwrap().as_ref() { m.buf.lock().unwrap().clear(); }
+    if let Some(m) = MIC.lock().as_ref() { m.buf.lock().clear(); }
 }
 
 /// What was recorded since `clear`, at 16 kHz.
 fn take() -> Option<Vec<f32>> {
-    let g = MIC.lock().unwrap();
+    let g = MIC.lock();
     let m = g.as_ref()?;
-    let raw = m.buf.lock().unwrap().clone();
+    let raw = m.buf.lock().clone();
     Some(crate::asr::resample(&raw, m.rate, 16000))
 }
 

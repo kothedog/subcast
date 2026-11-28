@@ -1900,6 +1900,7 @@ const dict: Record<string, string> = {
   "Antigravity CLI 暂时拒绝了这次请求（Google 返回 429，不一定是额度用完）：稍后再试，或在 SubCast 里换一个模型": "Antigravity CLI がこのリクエストを一時的に拒否しました（Google が 429 を返しましたが、利用枠切れとは限りません）。しばらくしてから再試行するか、SubCast で別のモデルに切り替えてください",
   "Antigravity CLI 回答到一半出错停止了，请重试": "Antigravity CLI が回答の途中でエラーにより停止しました。もう一度お試しください",
   "Antigravity CLI 现在不提供所选的模型「{m}」，请在 SubCast 的设置里重新选一个模型": "Antigravity CLI は選んだモデル「{m}」を現在提供していません。SubCast の設定でモデルを選び直してください",
+  "出了点内部错误，这次操作没有完成。详情已记在 panic.log 里。": "SubCast の内部でエラーが発生したため、この操作は完了しませんでした。詳細は panic.log に記録されています。",
 };
 
 export default dict;

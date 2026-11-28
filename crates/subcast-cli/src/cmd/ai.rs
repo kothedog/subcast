@@ -190,7 +190,7 @@ pub async fn run_deep(ctx: &CoreCtx, args: DeepArgs, out: Out) -> Result<(), Cli
             .or(ep.notes.clone())
             .ok_or_else(|| CliError::not_found("这一集没有完整 Shownotes"))?
     } else {
-        let cached = db::get_blob(&ctx.db.lock().unwrap(), &ep.id, "deep-read")?;
+        let cached = db::get_blob(&ctx.db.lock(), &ep.id, "deep-read")?;
         if let Some(h) = cached.filter(|s| !s.trim().is_empty()) {
             h
         } else {
@@ -248,7 +248,7 @@ pub async fn run_highlights(
     match args.action {
         HighlightsAction::List { reference } => {
             let ep = resolve_or_ingest_episode(ctx, &reference).await?;
-            let raw = db::get_blob(&ctx.db.lock().unwrap(), &ep.id, "highlights")?;
+            let raw = db::get_blob(&ctx.db.lock(), &ep.id, "highlights")?;
             let bundle: Option<highlights::HighlightBundle> =
                 raw.and_then(|s| serde_json::from_str(&s).ok());
             match bundle {
@@ -304,7 +304,7 @@ pub async fn run_highlights(
                 let es = end.map(|x| resolver::parse_timestamp(&x)).transpose()?;
                 highlights::range_from_clock(&tr.segments, ss, es)
             } else {
-                let raw = db::get_blob(&ctx.db.lock().unwrap(), &ep.id, "highlights")?
+                let raw = db::get_blob(&ctx.db.lock(), &ep.id, "highlights")?
                     .ok_or_else(|| CliError::not_found("没有高光记录，请先 extract 或传入 --start/--end"))?;
                 let b: highlights::HighlightBundle = serde_json::from_str(&raw)
                     .map_err(|e| CliError::new(1, "parse", e.to_string()))?;
@@ -334,7 +334,7 @@ pub async fn run_highlights(
             let ep = resolve_or_ingest_episode(ctx, &reference).await?;
             let tr = ensure_transcript(ctx, &ep, true, true).await?;
             let zh = ai::load_episode_zh(ctx, &ep.id);
-            let raw = db::get_blob(&ctx.db.lock().unwrap(), &ep.id, "highlights")?
+            let raw = db::get_blob(&ctx.db.lock(), &ep.id, "highlights")?
                 .ok_or_else(|| CliError::not_found("没有高光记录，请先运行 highlights extract"))?;
             let b: highlights::HighlightBundle = serde_json::from_str(&raw)
                 .map_err(|e| CliError::new(1, "parse", e.to_string()))?;

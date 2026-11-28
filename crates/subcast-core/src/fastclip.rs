@@ -88,8 +88,8 @@ async fn resolve(ytdlp: &Path, video_id: &str, max_h: u32) -> Result<Pair> {
     let key = format!("{video_id}|dash{max_h}");
     // One yt-dlp run per video at a time: a warm-up and a download asking together share its answer.
     let lock = {
-        static LOCKS: once_cell::sync::Lazy<std::sync::Mutex<std::collections::HashMap<String, Arc<tokio::sync::Mutex<()>>>>> = once_cell::sync::Lazy::new(Default::default);
-        LOCKS.lock().unwrap().entry(key.clone()).or_default().clone()
+        static LOCKS: once_cell::sync::Lazy<parking_lot::Mutex<std::collections::HashMap<String, Arc<tokio::sync::Mutex<()>>>>> = once_cell::sync::Lazy::new(Default::default);
+        LOCKS.lock().entry(key.clone()).or_default().clone()
     };
     let _held = lock.lock().await;
     if let Some(p) = asr::streams::get(&key).and_then(|j| serde_json::from_str::<Pair>(&j).ok()) { return Ok(p); }

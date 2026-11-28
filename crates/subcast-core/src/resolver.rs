@@ -133,7 +133,7 @@ pub async fn resolve_episode(ctx: &CoreCtx, reference: &str) -> Result<Episode> 
 
     // 1. Exact ID or prefix check in DB
     {
-        let conn = ctx.db.lock().unwrap();
+        let conn = ctx.db.lock();
         if let Some(ep) = db::get_episode(&conn, q)? {
             return Ok(ep);
         }
@@ -142,7 +142,7 @@ pub async fn resolve_episode(ctx: &CoreCtx, reference: &str) -> Result<Episode> 
     // 2. Direct URL (check DB first via link/guid/audio_url, else fetch single episode via ops)
     if looks_like_url(q) {
         let found = {
-            let conn = ctx.db.lock().unwrap();
+            let conn = ctx.db.lock();
             let all = db::list_episodes(&conn, None, 2000)?;
             all.into_iter().find(|e| {
                 e.link.as_deref() == Some(q)
@@ -168,7 +168,7 @@ pub async fn resolve_episode(ctx: &CoreCtx, reference: &str) -> Result<Episode> 
     if let Some((show_ref, ep_sel)) = q.split_once(':') {
         if !show_ref.trim().is_empty() && !ep_sel.trim().is_empty() {
             let found = {
-                let conn = ctx.db.lock().unwrap();
+                let conn = ctx.db.lock();
                 resolve_show(&conn, show_ref).ok().map(|show| db::list_episodes(&conn, Some(&show.id), 5000)).transpose()?
             };
             // A show that isn't subscribed: found by name in the podcast and YouTube directory, not followed.
@@ -178,7 +178,7 @@ pub async fn resolve_episode(ctx: &CoreCtx, reference: &str) -> Result<Episode> 
     }
 
     // 4. Global prefix, `latest` / `@N`, or global title substring
-    let conn = ctx.db.lock().unwrap();
+    let conn = ctx.db.lock();
     let ql = q.to_lowercase();
     if q.len() >= 4 {
         let mut st = conn.prepare("SELECT id FROM episodes WHERE id LIKE ?1 LIMIT 6")?;

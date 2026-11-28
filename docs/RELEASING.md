@@ -68,13 +68,21 @@ Front-end values (recommended shows, prompts, model lists) change through an int
 1. Branch → PR → merge (never push to `main`). Bump the version in `package.json`, `src-tauri/Cargo.toml`, `src-tauri/tauri.conf.json`. Write `release/notes-<version>.md` (Chinese first, then English; user-facing: New / Fixed / Not verified / Upgrading). `release/` is gitignored; the notes go into the GitHub release body.
 2. Before merging, run the CI build on the branch: `gh workflow run build.yml --ref <branch>`. The Windows job checks that `subcast.exe` imports no Visual C++ runtime and that the installer carries `vcrt/`.
 3. Tag after merging: `git tag v<version> && git push origin v<version>`. CI builds Windows and Linux into a draft release.
-4. Mac (on the Mac, screen unlocked so the `notary` keychain profile can be read; `brew install create-dmg` once): `scripts/release.sh` builds both architectures, notarizes the apps and DMGs, staples, re-makes and signs the updater tarballs, and writes `latest.json`. The DMG window (app left, Applications right, background with a drag hint) comes from `scripts/dmg/`; after editing `background.svg`, run `scripts/dmg/render.sh` and commit the PNGs.
+4. Mac (on the Mac, screen unlocked so the `notary` keychain profile can be read; `brew install create-dmg` once): `scripts/release.sh` builds both architectures, notarizes the apps and DMGs, staples, re-makes and signs the updater tarballs, and writes `latest.json`. It also keeps each architecture's dSYMs (`subcast`, `subcast-cli`) in `release/dsym/<version>/<arch>/` and stops if a dSYM's UUID differs from its binary. They stay on this Mac: `release/<version>/` is what gets uploaded, `release/dsym/` is not. The DMG window (app left, Applications right, background with a drag hint) comes from `scripts/dmg/`; after editing `background.svg`, run `scripts/dmg/render.sh` and commit the PNGs.
 5. When CI is done: `scripts/release.sh --skip-mac --publish --notes "<one line>"`. Uploads to `subcast.qiaomu.ai/download/<version>/`, points `/download/latest/<stable names>` at it, uploads `latest.json` **last**, and attaches Mac files and stable-named copies to the GitHub release.
 6. Publish the draft GitHub release with the notes file: `gh release edit v<version> --draft=false --latest --notes-file release/notes-<version>.md`.
 7. Verify from outside: `latest.json` shows the version and four platforms; every link under `/download/latest/` and `github.com/joeseesun/subcast/releases/latest/download/` returns 200; `spctl -a -t open --context context:primary-signature -v` on a downloaded DMG says "Notarized Developer ID"; an install of the previous version updates in-app.
 8. Report what was and wasn't verified (Windows/Linux hardware, Windows has no Authenticode signature yet).
 
 Keys and credentials (never in the repo or in prompts): updater key `~/.tauri/subcast-updater.key` (also the GitHub secret `TAURI_SIGNING_PRIVATE_KEY`); Developer ID certificate in the login keychain; notarization profile `notary` in the keychain.
+
+## Reading a crash
+
+- Every Rust panic goes to `panic.log` in the app log folder (macOS: `~/Library/Logs/ai.qiaomu.subcast/`; `src-tauri/src/panic_log.rs`). Each line has the time, version, thread, message and `file:line:col`. Start there.
+- macOS crash reports are in `~/Library/Logs/DiagnosticReports/subcast-*.ips`. Match the binary's UUID (`usedImages`) to a dSYM with `dwarfdump --uuid`, then: `atos -o release/dsym/<version>/aarch64/subcast.dSYM/Contents/Resources/DWARF/subcast-* -arch arm64 -l <load address> <frame addresses>`. The load address is the `base` of the `subcast` image in the report.
+- Releases up to 0.3.8 have no dSYM.
+- A panic inside a Tauri command doesn't crash or hang the app: the call fails with a fixed "内部错误" message (`src-tauri/src/guard.rs`), and `panic.log` has the details.
+- Never set `panic = "abort"` in the release profile: wry's `objc2::exception::catch` needs unwinding (see `Cargo.toml`).
 
 ## Known traps
 

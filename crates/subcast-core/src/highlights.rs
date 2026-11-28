@@ -338,8 +338,8 @@ pub async fn extract_highlights(
     model_override: Option<&str>,
     sink: &dyn ProgressSink,
 ) -> Result<HighlightBundle> {
-    let ep = db::get_episode(&ctx.db.lock().unwrap(), episode_id)?.ok_or_else(|| anyhow!("节目不存在"))?;
-    let t = db::get_transcript(&ctx.db.lock().unwrap(), episode_id)?.ok_or_else(|| anyhow!("没有字幕"))?;
+    let ep = db::get_episode(&ctx.db.lock(), episode_id)?.ok_or_else(|| anyhow!("节目不存在"))?;
+    let t = db::get_transcript(&ctx.db.lock(), episode_id)?.ok_or_else(|| anyhow!("没有字幕"))?;
     let zh = ai::load_episode_zh(ctx, episode_id);
     let resolved = settings::resolve_chat_provider(ctx, provider_override, model_override)?;
     if !settings::provider_ready(&resolved) {
@@ -435,7 +435,7 @@ pub async fn extract_highlights(
         model: Some(format!("{} · {}", resolved.provider.id, resolved.provider.model)),
         created_at: now_ms(),
     };
-    db::set_blob(&ctx.db.lock().unwrap(), episode_id, "highlights", &serde_json::to_string(&bundle)?)?;
+    db::set_blob(&ctx.db.lock(), episode_id, "highlights", &serde_json::to_string(&bundle)?)?;
     Ok(bundle)
 }
 
@@ -459,8 +459,8 @@ pub async fn polish_clip_copy(
     model_override: Option<&str>,
     sink: &dyn ProgressSink,
 ) -> Result<PolishedClipCopy> {
-    let ep = db::get_episode(&ctx.db.lock().unwrap(), episode_id)?.ok_or_else(|| anyhow!("节目不存在"))?;
-    let t = db::get_transcript(&ctx.db.lock().unwrap(), episode_id)?.ok_or_else(|| anyhow!("没有字幕"))?;
+    let ep = db::get_episode(&ctx.db.lock(), episode_id)?.ok_or_else(|| anyhow!("节目不存在"))?;
+    let t = db::get_transcript(&ctx.db.lock(), episode_id)?.ok_or_else(|| anyhow!("没有字幕"))?;
     let zh = ai::load_episode_zh(ctx, episode_id);
     let resolved = settings::resolve_chat_provider(ctx, provider_override, model_override)?;
     if !settings::provider_ready(&resolved) {

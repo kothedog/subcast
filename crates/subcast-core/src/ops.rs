@@ -68,8 +68,8 @@ pub struct VideoStream {
 /// One address lookup per video at a time: a second request (the player and its fallback can both ask) waits for
 /// the first and then finds its address in the cache, instead of starting another yt-dlp.
 fn stream_lock(video_id: &str) -> std::sync::Arc<tokio::sync::Mutex<()>> {
-    static LOCKS: once_cell::sync::Lazy<std::sync::Mutex<std::collections::HashMap<String, std::sync::Arc<tokio::sync::Mutex<()>>>>> = once_cell::sync::Lazy::new(Default::default);
-    let mut m = LOCKS.lock().unwrap();
+    static LOCKS: once_cell::sync::Lazy<parking_lot::Mutex<std::collections::HashMap<String, std::sync::Arc<tokio::sync::Mutex<()>>>>> = once_cell::sync::Lazy::new(Default::default);
+    let mut m = LOCKS.lock();
     m.retain(|_, l| std::sync::Arc::strong_count(l) > 1);
     m.entry(video_id.to_string()).or_default().clone()
 }
@@ -91,7 +91,7 @@ pub struct Favorite {
 }
 
 pub fn store(ctx: &CoreCtx, show: &Show, eps: &[Episode]) -> Result<()> {
-    let mut conn = ctx.db.lock().unwrap();
+    let mut conn = ctx.db.lock();
     db::upsert_show(&conn, show)?;
     db::upsert_episodes(&mut conn, eps)?;
     Ok(())
@@ -108,7 +108,7 @@ pub async fn fetch_any(ctx: &CoreCtx, feed_url: &str, kind: &str) -> Result<(Sho
             let ch = qiaomu::channel(&id).await?;
             (id, ch)
         };
-        let conn = ctx.db.lock().unwrap();
+        let conn = ctx.db.lock();
         if ch.videos_checked || crate::curated_video::is_audio_only(&source_id) {
             let _ = db::clear_show_videos(&conn, &ch.show.id);
         }
@@ -125,7 +125,7 @@ pub async fn fetch_any(ctx: &CoreCtx, feed_url: &str, kind: &str) -> Result<(Sho
 
 pub async fn youtube_channel_feed(ctx: &CoreCtx, video_id: &str) -> Result<String> {
     let ep_id = short_hash(&format!("single:{video_id}"), 20);
-    if let Some(feed) = db::get_blob(&ctx.db.lock().unwrap(), &ep_id, "youtube-channel-feed")? {
+    if let Some(feed) = db::get_blob(&ctx.db.lock(), &ep_id, "youtube-channel-feed")? {
         return Ok(feed);
     }
     let info = tokio::time::timeout(std::time::Duration::from_secs(8), youtube::video_info(video_id))
@@ -133,7 +133,7 @@ pub async fn youtube_channel_feed(ctx: &CoreCtx, video_id: &str) -> Result<Strin
         .map_err(|_| anyhow!("没有在这个页面找到 YouTube 频道"))??;
     let id = info.channel_id.ok_or_else(|| anyhow!("没有在这个页面找到 YouTube 频道"))?;
     let feed = feeds::channel_feed(&id);
-    db::set_blob(&ctx.db.lock().unwrap(), &ep_id, "youtube-channel-feed", &feed)?;
+    db::set_blob(&ctx.db.lock(), &ep_id, "youtube-channel-feed", &feed)?;
     Ok(feed)
 }
 
@@ -152,7 +152,7 @@ pub async fn single_youtube(ctx: &CoreCtx, video_id: &str) -> Result<Episode> {
         notes: Some(format!("{}\n\n{}", info.author, info.description)),
         ..Default::default()
     };
-    let mut conn = ctx.db.lock().unwrap();
+    let mut conn = ctx.db.lock();
     db::upsert_episodes(&mut conn, std::slice::from_ref(&ep))?;
     if let Some(id) = info.channel_id {
         let _ = db::set_blob(&conn, &ep.id, "youtube-channel-feed", &feeds::channel_feed(&id));
@@ -184,7 +184,7 @@ pub async fn fetch_input(ctx: &CoreCtx, input: &str) -> Result<Fetched> {
         feeds::Source::XiaoyuzhouEpisode(url) => {
             let mut ep = feeds::xiaoyuzhou_episode(&url).await?;
             ep.id = short_hash(&format!("single:{}", ep.guid), 20);
-            let mut conn = ctx.db.lock().unwrap();
+            let mut conn = ctx.db.lock();
             db::upsert_episodes(&mut conn, std::slice::from_ref(&ep))?;
             let ep = db::get_episode(&conn, &ep.id)?.unwrap_or(ep);
             return Ok(Fetched::Single(ep));
@@ -252,7 +252,7 @@ pub fn known_show_id(input: &str) -> Option<String> {
 
 pub fn cached_show(ctx: &CoreCtx, input: &str) -> Result<Option<Preview>> {
     let Some(id) = known_show_id(input) else { return Ok(None) };
-    let conn = ctx.db.lock().unwrap();
+    let conn = ctx.db.lock();
     let Some(json) = db::get_blob(&conn, &id, "show-json")? else { return Ok(None) };
     let Ok(show) = serde_json::from_str::<Show>(&json) else { return Ok(None) };
     let fetched_at = db::get_blob(&conn, &id, "fetched-at")?.and_then(|t| t.parse().ok()).unwrap_or(0);
@@ -272,7 +272,7 @@ pub async fn preview_show(ctx: &CoreCtx, input: &str) -> Result<Preview> {
 
 /// Keeps a fetched show's episodes (and the show's details, for its name) without following the show.
 pub fn keep_preview(ctx: &CoreCtx, show: Show, eps: Vec<Episode>) -> Result<Preview> {
-    let mut conn = ctx.db.lock().unwrap();
+    let mut conn = ctx.db.lock();
     db::upsert_episodes(&mut conn, &eps)?;
     let now = now_ms();
     if let Ok(json) = serde_json::to_string(&show) {
@@ -284,7 +284,7 @@ pub fn keep_preview(ctx: &CoreCtx, show: Show, eps: Vec<Episode>) -> Result<Prev
 }
 
 pub async fn refresh_show(ctx: &CoreCtx, id: &str) -> Result<Show> {
-    let show = db::get_show(&ctx.db.lock().unwrap(), id)?.ok_or_else(|| anyhow!("节目不存在"))?;
+    let show = db::get_show(&ctx.db.lock(), id)?.ok_or_else(|| anyhow!("节目不存在"))?;
     let existing = show.cover.clone();
     let (fresh, eps) = fetch_any(ctx, &show.feed_url, &show.kind).await?;
     let fresh = Show { id: show.id.clone(), kind: show.kind.clone(), ..fresh };
@@ -300,7 +300,7 @@ pub async fn refresh_all(ctx: &CoreCtx) -> Result<Refreshed> {
         return Ok(Refreshed { shows: 0, new_episodes: 0, skipped: true });
     }
     let r = async {
-        let shows: Vec<Show> = db::list_shows(&ctx.db.lock().unwrap())?
+        let shows: Vec<Show> = db::list_shows(&ctx.db.lock())?
             .into_iter()
             .filter(|s| s.kind != "single")
             .collect();
@@ -326,7 +326,7 @@ pub async fn refresh_all(ctx: &CoreCtx) -> Result<Refreshed> {
         for (s, r) in results {
             let Ok(Ok((fresh, eps))) = r else { continue };
             let known = {
-                let conn = ctx.db.lock().unwrap();
+                let conn = ctx.db.lock();
                 let ids = db::list_show_episode_ids(&conn, &s.id).unwrap_or_default();
                 eps.iter().filter(|x| ids.contains(&x.id)).count()
             };
@@ -451,12 +451,12 @@ pub async fn youtube_transcript(
     if t.segments.is_empty() {
         return Ok(t);
     }
-    db::save_transcript(&ctx.db.lock().unwrap(), &t)?;
+    db::save_transcript(&ctx.db.lock(), &t)?;
     if let Some(zh) = youtube::official_chinese(&info.tracks, &track.language) {
         if let Ok(lines) = youtube::fetch_track(zh).await {
             let items = youtube::align(&t.segments, &transcript::clean(lines));
             if items.iter().filter(|x| x.is_some()).count() * 10 >= items.len() * 6 {
-                let conn = ctx.db.lock().unwrap();
+                let conn = ctx.db.lock();
                 db::set_blob(&conn, &ep.id, "zh", &serde_json::to_string(&items)?)?;
                 db::set_blob(&conn, &ep.id, "zh-engine", "youtube")?;
             }
@@ -466,7 +466,7 @@ pub async fn youtube_transcript(
 }
 
 pub async fn youtube_tracks(ctx: &CoreCtx, episode_id: &str) -> Result<Vec<TrackChoice>> {
-    let ep = db::get_episode(&ctx.db.lock().unwrap(), episode_id)?.ok_or_else(|| anyhow!("节目不存在"))?;
+    let ep = db::get_episode(&ctx.db.lock(), episode_id)?.ok_or_else(|| anyhow!("节目不存在"))?;
     let Some(vid) = &ep.video_id else { return Ok(vec![]) };
     let info = youtube::video_info(vid).await?;
     let mut out: Vec<TrackChoice> = Vec::new();
@@ -479,7 +479,7 @@ pub async fn youtube_tracks(ctx: &CoreCtx, episode_id: &str) -> Result<Vec<Track
 }
 
 pub async fn use_youtube_track(ctx: &CoreCtx, episode_id: &str, language: &str, auto: bool) -> Result<Transcript> {
-    let ep = db::get_episode(&ctx.db.lock().unwrap(), episode_id)?.ok_or_else(|| anyhow!("节目不存在"))?;
+    let ep = db::get_episode(&ctx.db.lock(), episode_id)?.ok_or_else(|| anyhow!("节目不存在"))?;
     let vid = ep.video_id.clone().ok_or_else(|| anyhow!("不是视频节目"))?;
     let info = youtube::video_info(&vid).await?;
     let track = info
@@ -492,12 +492,12 @@ pub async fn use_youtube_track(ctx: &CoreCtx, episode_id: &str, language: &str, 
     if t.segments.is_empty() {
         return Err(anyhow!("这条字幕是空的"));
     }
-    db::set_blob(&ctx.db.lock().unwrap(), episode_id, "track-picked", "1")?;
+    db::set_blob(&ctx.db.lock(), episode_id, "track-picked", "1")?;
     Ok(t)
 }
 
 pub async fn fetch_official_transcript(ctx: &CoreCtx, episode_id: &str) -> Result<Option<Transcript>> {
-    let ep = db::get_episode(&ctx.db.lock().unwrap(), episode_id)?.ok_or_else(|| anyhow!("节目不存在"))?;
+    let ep = db::get_episode(&ctx.db.lock(), episode_id)?.ok_or_else(|| anyhow!("节目不存在"))?;
     let t = if let Some(vid) = &ep.video_id {
         let info = youtube::video_info(vid).await?;
         let hint = youtube::script_hint(&info.title).or_else(|| youtube::script_hint(&ep.title));
@@ -555,20 +555,20 @@ pub async fn fetch_official_transcript(ctx: &CoreCtx, episode_id: &str) -> Resul
         if t.segments.is_empty() {
             return Ok(None);
         }
-        db::save_transcript(&ctx.db.lock().unwrap(), t)?;
+        db::save_transcript(&ctx.db.lock(), t)?;
     }
     Ok(t)
 }
 
 pub async fn qiaomu_detail(ctx: &CoreCtx, episode_id: &str) -> Result<qiaomu::Detail> {
-    let ep = db::get_episode(&ctx.db.lock().unwrap(), episode_id)?.ok_or_else(|| anyhow!("节目不存在"))?;
+    let ep = db::get_episode(&ctx.db.lock(), episode_id)?.ok_or_else(|| anyhow!("节目不存在"))?;
     let d = if matches!(ep.transcript_type.as_deref(), Some("qiaomu-rss") | Some("podscribe")) {
         qiaomu::Detail { audio: None, deep_read: qiaomu::rss_rewrite(&ep.guid).await?, transcript: None }
     } else {
         let link = ep.link.clone().ok_or_else(|| anyhow!("这集没有网页"))?;
         qiaomu::detail(&link).await?
     };
-    let conn = ctx.db.lock().unwrap();
+    let conn = ctx.db.lock();
     if let (Some(a), None) = (&d.audio, &ep.audio_url) {
         let _ = db::set_audio_url(&conn, &ep.id, a);
     }
@@ -584,9 +584,9 @@ pub async fn learn_clip(ctx: &CoreCtx, episode_id: &str, start: f64, end: f64) -
     if done.exists() {
         return Ok(done.to_string_lossy().into_owned());
     }
-    let ep = db::get_episode(&ctx.db.lock().unwrap(), episode_id)?.ok_or_else(|| anyhow!("节目不存在"))?;
+    let ep = db::get_episode(&ctx.db.lock(), episode_id)?.ok_or_else(|| anyhow!("节目不存在"))?;
     if let Some(saved) = offline::find(data, episode_id).or_else(|| offline::cached(data, episode_id)) {
-        let map = db::get_blob(&ctx.db.lock().unwrap(), episode_id, "tmap")
+        let map = db::get_blob(&ctx.db.lock(), episode_id, "tmap")
             .ok()
             .flatten()
             .and_then(|s| serde_json::from_str::<align::TimeMap>(&s).ok())
@@ -708,7 +708,7 @@ pub async fn youtube_stream(
     .await
     .map_err(|_| anyhow!("获取视频地址超时，请检查网络或代理"))??;
     let duration = asr::video_duration(video_id);
-    if let Some(d) = duration { let _ = db::fill_video_duration(&ctx.db.lock().unwrap(), video_id, d); }
+    if let Some(d) = duration { let _ = db::fill_video_duration(&ctx.db.lock(), video_id, d); }
     let is_hls = url.contains("m3u8") || url.contains("/manifest/hls");
     if is_hls && mode == "proxy-hls" {
         return Ok(VideoStream { url: hlsproxy::proxied(&url).await?, kind: "hls", duration });
@@ -729,7 +729,7 @@ pub async fn download_episode(ctx: &CoreCtx, episode_id: &str, sink: &dyn Progre
     if let Some(s) = offline::find(&ctx.data, episode_id) {
         return Ok(s);
     }
-    let ep = db::get_episode(&ctx.db.lock().unwrap(), episode_id)?.ok_or_else(|| anyhow!("节目不存在"))?;
+    let ep = db::get_episode(&ctx.db.lock(), episode_id)?.ok_or_else(|| anyhow!("节目不存在"))?;
     let job = format!("dl:{episode_id}");
     let cancel = ctx.job(&job);
     let result = offline::download(&ctx.data, &ep, cancel.clone(), |p| {
@@ -744,10 +744,10 @@ pub async fn download_episode(ctx: &CoreCtx, episode_id: &str, sink: &dyn Progre
 }
 
 pub async fn full_notes(ctx: &CoreCtx, episode_id: &str) -> Result<Option<String>> {
-    if let Some(cached) = db::get_blob(&ctx.db.lock().unwrap(), episode_id, "notes-full")? {
+    if let Some(cached) = db::get_blob(&ctx.db.lock(), episode_id, "notes-full")? {
         return Ok(Some(cached).filter(|s| !s.is_empty()));
     }
-    let ep = db::get_episode(&ctx.db.lock().unwrap(), episode_id)?.ok_or_else(|| anyhow!("节目不存在"))?;
+    let ep = db::get_episode(&ctx.db.lock(), episode_id)?.ok_or_else(|| anyhow!("节目不存在"))?;
     let have = ep.notes.as_deref().map(|n| n.chars().count()).unwrap_or(0);
     let mut best: Option<String> = None;
     let mut reached = false;
@@ -773,7 +773,7 @@ pub async fn full_notes(ctx: &CoreCtx, episode_id: &str) -> Result<Option<String
     if out.is_none() && !reached {
         return Ok(None);
     }
-    db::set_blob(&ctx.db.lock().unwrap(), episode_id, "notes-full", out.as_deref().unwrap_or(""))?;
+    db::set_blob(&ctx.db.lock(), episode_id, "notes-full", out.as_deref().unwrap_or(""))?;
     Ok(out)
 }
 
@@ -828,17 +828,17 @@ pub async fn take_shared(ctx: &CoreCtx, ep: &Episode) -> Option<Transcript> {
         has_fp: a.fp,
     });
     let t = shared::into_transcript(&ep.id, hit);
-    db::save_transcript(&ctx.db.lock().unwrap(), &t).ok()?;
+    db::save_transcript(&ctx.db.lock(), &t).ok()?;
     if let Some(r) = audio_ref {
         let _ = db::set_blob(
-            &ctx.db.lock().unwrap(),
+            &ctx.db.lock(),
             &ep.id,
             "audio-ref",
             &serde_json::to_string(&r).unwrap_or_default(),
         );
     }
     if let Some(tr) = translation.filter(|tr| tr.items.len() == t.segments.len() && tr.lang.starts_with("zh")) {
-        let conn = ctx.db.lock().unwrap();
+        let conn = ctx.db.lock();
         let _ = db::set_blob(&conn, &ep.id, "zh", &serde_json::to_string(&tr.items).unwrap_or_default());
         let _ = db::set_blob(&conn, &ep.id, "zh-engine", "shared");
     }
@@ -846,7 +846,7 @@ pub async fn take_shared(ctx: &CoreCtx, ep: &Episode) -> Option<Transcript> {
 }
 
 pub fn audio_ref(ctx: &CoreCtx, episode_id: &str) -> Option<align::AudioRef> {
-    db::get_blob(&ctx.db.lock().unwrap(), episode_id, "audio-ref")
+    db::get_blob(&ctx.db.lock(), episode_id, "audio-ref")
         .ok()
         .flatten()
         .and_then(|s| serde_json::from_str::<align::AudioRef>(&s).ok())
@@ -861,7 +861,7 @@ pub async fn align_audio(
     sink: &dyn ProgressSink,
 ) -> Result<Aligned> {
     let (ep, aref, saved) = {
-        let conn = ctx.db.lock().unwrap();
+        let conn = ctx.db.lock();
         let ep = db::get_episode(&conn, episode_id)?.ok_or_else(|| anyhow!("节目不存在"))?;
         let aref = db::get_blob(&conn, episode_id, "audio-ref")
             .ok()
@@ -899,7 +899,7 @@ pub async fn align_audio(
     let cancel = ctx.job(&job);
     let result: Result<Aligned> = async {
         let save = |m: &align::TimeMap| {
-            let _ = db::set_blob(&ctx.db.lock().unwrap(), episode_id, "tmap", &serde_json::to_string(m).unwrap_or_default());
+            let _ = db::set_blob(&ctx.db.lock(), episode_id, "tmap", &serde_json::to_string(m).unwrap_or_default());
         };
         if let Some(a) = &aref {
             let play_bytes = match &local {
@@ -940,7 +940,7 @@ pub async fn align_audio(
                         .ok_or_else(|| anyhow!("没有拿到字幕对应音频的指纹"))?;
                     a.fp = Some(align::encode_fp(&fp));
                     let _ = db::set_blob(
-                        &ctx.db.lock().unwrap(),
+                        &ctx.db.lock(),
                         episode_id,
                         "audio-ref",
                         &serde_json::to_string(&a).unwrap_or_default(),
@@ -950,7 +950,7 @@ pub async fn align_audio(
             };
             (align::map_fingerprints(&ref_fp, &play_fp)?, "fingerprint")
         } else {
-            let t = db::get_transcript(&ctx.db.lock().unwrap(), episode_id)?.ok_or_else(|| anyhow!("没有字幕"))?;
+            let t = db::get_transcript(&ctx.db.lock(), episode_id)?.ok_or_else(|| anyhow!("没有字幕"))?;
             let model = model.ok_or_else(|| anyhow!("先在「语音识别」里下载一个本机模型，才能自动比对"))?;
             let mut anchors = Vec::new();
             let mut starts = align::probe_starts(secs, 120.0);
@@ -1029,13 +1029,13 @@ async fn listen_probes(
 }
 
 pub async fn shared_transcript(ctx: &CoreCtx, episode_id: &str) -> Result<Option<Transcript>> {
-    let ep = db::get_episode(&ctx.db.lock().unwrap(), episode_id)?.ok_or_else(|| anyhow!("节目不存在"))?;
+    let ep = db::get_episode(&ctx.db.lock(), episode_id)?.ok_or_else(|| anyhow!("节目不存在"))?;
     Ok(take_shared(ctx, &ep).await)
 }
 
 pub async fn shared_exists(ctx: &CoreCtx, episode_ids: &[String]) -> Result<Vec<String>> {
     let eps: Vec<Episode> = {
-        let conn = ctx.db.lock().unwrap();
+        let conn = ctx.db.lock();
         episode_ids.iter().take(200).filter_map(|id| db::get_episode(&conn, id).ok().flatten()).collect()
     };
     let lists: Vec<Vec<String>> = eps.iter().map(shared::keys).collect();
@@ -1071,7 +1071,7 @@ async fn run_asr_pipeline(
     }
     emit_asr(sink, &ep.id, "transcribe", 0.0, None, None);
     let use_notes = {
-        let conn = ctx.db.lock().unwrap();
+        let conn = ctx.db.lock();
         db::get_setting(&conn, "app")
             .ok()
             .flatten()
@@ -1090,7 +1090,7 @@ async fn run_asr_pipeline(
         asr_context::Meta::default()
     };
     let hotwords: Vec<String> = if use_notes {
-        db::get_blob(&ctx.db.lock().unwrap(), &ep.id, "ctx")
+        db::get_blob(&ctx.db.lock(), &ep.id, "ctx")
             .ok()
             .flatten()
             .and_then(|s| serde_json::from_str::<Value>(&s).ok())
@@ -1207,9 +1207,9 @@ async fn run_asr_pipeline(
         language: out.language,
         segments,
     };
-    db::save_transcript(&ctx.db.lock().unwrap(), &t)?;
+    db::save_transcript(&ctx.db.lock(), &t)?;
     let made_by = json!({ "source": engine_label, "model": model_name });
-    let _ = db::set_blob(&ctx.db.lock().unwrap(), &ep.id, "asr-meta", &made_by.to_string());
+    let _ = db::set_blob(&ctx.db.lock(), &ep.id, "asr-meta", &made_by.to_string());
     Ok((t, engine_label, model_name))
 }
 
@@ -1223,7 +1223,7 @@ pub async fn transcribe(
     skip_shared: bool,
     sink: Arc<dyn ProgressSink>,
 ) -> Result<Transcript> {
-    let ep = db::get_episode(&ctx.db.lock().unwrap(), episode_id)?.ok_or_else(|| anyhow!("节目不存在"))?;
+    let ep = db::get_episode(&ctx.db.lock(), episode_id)?.ok_or_else(|| anyhow!("节目不存在"))?;
     let share_keys = shared::keys(&ep);
     if !skip_shared && (cloud.is_none() || !share_keys.is_empty()) {
         if let Some(t) = take_shared(ctx, &ep).await {
@@ -1282,8 +1282,8 @@ pub async fn transcribe(
                     shared_id: None,
                     has_fp: true,
                 };
-                let _ = db::set_blob(&ctx.db.lock().unwrap(), &ep.id, "audio-ref", &serde_json::to_string(&r).unwrap_or_default());
-                let _ = db::set_blob(&ctx.db.lock().unwrap(), &ep.id, "tmap", &serde_json::to_string(&align::TimeMap::same(bytes)).unwrap_or_default());
+                let _ = db::set_blob(&ctx.db.lock(), &ep.id, "audio-ref", &serde_json::to_string(&r).unwrap_or_default());
+                let _ = db::set_blob(&ctx.db.lock(), &ep.id, "tmap", &serde_json::to_string(&align::TimeMap::same(bytes)).unwrap_or_default());
             }
             if audio.starts_with(&work) {
                 let _ = offline::keep_cached(&ctx.data, &ep.id, &audio);
@@ -1299,7 +1299,7 @@ pub async fn transcribe(
         Ok((t, engine_label, model_name)) => {
             if !share_keys.is_empty() {
                 let (share_on, install) = {
-                    let conn = ctx.db.lock().unwrap();
+                    let conn = ctx.db.lock();
                     let on = db::get_setting(&conn, "app")
                         .ok()
                         .flatten()
@@ -1311,7 +1311,7 @@ pub async fn transcribe(
                 if share_on {
                     let last_end = t.segments.last().map(|s| s.end).unwrap_or(0.0);
                     let translation = {
-                        let conn = ctx.db.lock().unwrap();
+                        let conn = ctx.db.lock();
                         let items: Vec<Option<String>> = t
                             .segments
                             .iter()
@@ -1389,7 +1389,7 @@ pub async fn transcribe_local_file(
         ..Default::default()
     };
     {
-        let mut conn = ctx.db.lock().unwrap();
+        let mut conn = ctx.db.lock();
         db::upsert_episodes(&mut conn, std::slice::from_ref(&ep))?;
     }
     let spec = asr::resolve(&ctx.data, model).ok_or_else(|| anyhow!("未知模型"))?;
@@ -1409,11 +1409,11 @@ pub async fn transcribe_local_file(
         Ok((t, _, _)) => {
             if let Some(last) = t.segments.last() {
                 ep.duration = Some(last.end);
-                let mut conn = ctx.db.lock().unwrap();
+                let mut conn = ctx.db.lock();
                 let _ = db::upsert_episodes(&mut conn, std::slice::from_ref(&ep));
             }
             emit_asr(sink, &ep_id, "done", 1.0, None, None);
-            Ok((db::get_episode(&ctx.db.lock().unwrap(), &ep_id)?.unwrap_or(ep), t))
+            Ok((db::get_episode(&ctx.db.lock(), &ep_id)?.unwrap_or(ep), t))
         }
         Err(err) => {
             emit_asr(sink, &ep_id, "error", 0.0, Some(&err.to_string()), None);
@@ -1424,7 +1424,7 @@ pub async fn transcribe_local_file(
 
 pub async fn share_translation(ctx: &CoreCtx, episode_id: &str, engine: &str, model: &str) -> Result<String> {
     let (ep, t, items, made_by, share_on, install) = {
-        let conn = ctx.db.lock().unwrap();
+        let conn = ctx.db.lock();
         let ep = db::get_episode(&conn, episode_id)?.ok_or_else(|| anyhow!("节目不存在"))?;
         let t = db::get_transcript(&conn, episode_id)?.ok_or_else(|| anyhow!("没有字幕"))?;
         let items: Vec<Option<String>> = db::get_blob(&conn, episode_id, "zh")?
@@ -1479,9 +1479,9 @@ pub async fn share_translation(ctx: &CoreCtx, episode_id: &str, engine: &str, mo
 }
 
 pub async fn shared_guide(ctx: &CoreCtx, episode_id: &str) -> Result<Option<String>> {
-    let ep = db::get_episode(&ctx.db.lock().unwrap(), episode_id)?.ok_or_else(|| anyhow!("节目不存在"))?;
+    let ep = db::get_episode(&ctx.db.lock(), episode_id)?.ok_or_else(|| anyhow!("节目不存在"))?;
     let Some(text) = shared::lookup_guide(&shared::keys(&ep)).await else { return Ok(None) };
-    let conn = ctx.db.lock().unwrap();
+    let conn = ctx.db.lock();
     let _ = db::set_blob(&conn, episode_id, "summary", &text);
     let _ = db::set_blob(&conn, episode_id, "summary-from", "shared");
     Ok(Some(text))
@@ -1489,7 +1489,7 @@ pub async fn shared_guide(ctx: &CoreCtx, episode_id: &str) -> Result<Option<Stri
 
 pub async fn share_guide(ctx: &CoreCtx, episode_id: &str, text: &str, model: &str) -> Result<String> {
     let (ep, on, install) = {
-        let conn = ctx.db.lock().unwrap();
+        let conn = ctx.db.lock();
         let ep = db::get_episode(&conn, episode_id)?.ok_or_else(|| anyhow!("节目不存在"))?;
         let on = db::get_setting(&conn, "app")
             .ok()
@@ -1627,14 +1627,14 @@ pub async fn translate_texts(ctx: &CoreCtx, texts: &[String], target: Option<&st
     let tl = target.unwrap_or("zh-CN");
     let keys: Vec<String> = texts.iter().map(|t| short_hash(&format!("{tl}|{t}"), 24)).collect();
     let mut out: Vec<Option<String>> = {
-        let conn = ctx.db.lock().unwrap();
+        let conn = ctx.db.lock();
         keys.iter().map(|k| db::tr_get(&conn, k).ok().flatten()).collect()
     };
     let missing: Vec<usize> = (0..texts.len()).filter(|&i| out[i].is_none() && !texts[i].trim().is_empty()).collect();
     if !missing.is_empty() {
         let lines: Vec<String> = missing.iter().map(|&i| texts[i].clone()).collect();
         let done = translate::translate_lines(&lines, tl).await?;
-        let conn = ctx.db.lock().unwrap();
+        let conn = ctx.db.lock();
         let tx = conn.unchecked_transaction()?;
         for (j, &i) in missing.iter().enumerate() {
             if let Some(t) = done.get(j) {
@@ -1648,7 +1648,7 @@ pub async fn translate_texts(ctx: &CoreCtx, texts: &[String], target: Option<&st
 }
 
 pub fn export_opml_xml(ctx: &CoreCtx) -> Result<String> {
-    let shows = db::list_shows(&ctx.db.lock().unwrap())?;
+    let shows = db::list_shows(&ctx.db.lock())?;
     let list: Vec<(String, String)> = shows
         .into_iter()
         .filter(|s| s.feed_url.starts_with("http"))
@@ -1674,13 +1674,13 @@ pub fn export_opml(ctx: &CoreCtx, output_path: Option<&Path>) -> Result<String> 
 }
 
 pub fn get_settings(ctx: &CoreCtx) -> Result<Value> {
-    let raw = db::get_setting(&ctx.db.lock().unwrap(), "app")?;
+    let raw = db::get_setting(&ctx.db.lock(), "app")?;
     Ok(raw.and_then(|r| serde_json::from_str(&r).ok()).unwrap_or(Value::Null))
 }
 
 pub fn set_settings(ctx: &CoreCtx, settings: &Value) -> Result<()> {
     apply_runtime_settings(settings);
-    db::set_setting(&ctx.db.lock().unwrap(), "app", &settings.to_string())
+    db::set_setting(&ctx.db.lock(), "app", &settings.to_string())
 }
 
 pub async fn refresh_config_with<F>(ctx: &CoreCtx, pubkey: &str, verify: F) -> Result<Value>
@@ -1692,17 +1692,17 @@ where
     verify(pubkey, &body, &sig)?;
     let v: Value = serde_json::from_slice(&body)?;
     apply_remote_config(&v);
-    db::set_setting(&ctx.db.lock().unwrap(), "remote-config", &v.to_string())?;
+    db::set_setting(&ctx.db.lock(), "remote-config", &v.to_string())?;
     Ok(v)
 }
 
 pub fn favorites_list(ctx: &CoreCtx) -> Result<Vec<Favorite>> {
-    let raw = db::get_blob(&ctx.db.lock().unwrap(), "_app", "favorites")?;
+    let raw = db::get_blob(&ctx.db.lock(), "_app", "favorites")?;
     Ok(raw.and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default())
 }
 
 pub fn favorites_add(ctx: &CoreCtx, episode_id: &str) -> Result<Vec<Favorite>> {
-    let mut conn = ctx.db.lock().unwrap();
+    let mut conn = ctx.db.lock();
     let mut out = Vec::new();
     db::update_blob(&mut conn, "_app", "favorites", |cur| {
         let mut favs: Vec<Favorite> = cur.and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default();
@@ -1716,7 +1716,7 @@ pub fn favorites_add(ctx: &CoreCtx, episode_id: &str) -> Result<Vec<Favorite>> {
 }
 
 pub fn favorites_remove(ctx: &CoreCtx, episode_id: &str) -> Result<Vec<Favorite>> {
-    let mut conn = ctx.db.lock().unwrap();
+    let mut conn = ctx.db.lock();
     let mut out = Vec::new();
     db::update_blob(&mut conn, "_app", "favorites", |cur| {
         let mut favs: Vec<Favorite> = cur.and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default();
@@ -1798,9 +1798,9 @@ pub async fn clip_video_full(
     if opts.ranges.is_empty() {
         anyhow::bail!("请至少指定一个时间范围"); // i18n-ignore
     }
-    let ep = db::get_episode(&ctx.db.lock().unwrap(), &opts.episode_id)?
+    let ep = db::get_episode(&ctx.db.lock(), &opts.episode_id)?
         .ok_or_else(|| anyhow!("节目不存在"))?;
-    let show = db::get_show(&ctx.db.lock().unwrap(), &ep.show_id)?;
+    let show = db::get_show(&ctx.db.lock(), &ep.show_id)?;
     let video_id = ep
         .video_id
         .clone()
@@ -1882,7 +1882,7 @@ pub async fn clip_video_full(
 
     let (transcript_segs, zh) = {
         // The lock is let go first: load_episode_zh takes it again (holding it here hung every CLI clip).
-        let tr = db::get_transcript(&ctx.db.lock().unwrap(), &ep.id)?
+        let tr = db::get_transcript(&ctx.db.lock(), &ep.id)?
             .map(|t| t.segments)
             .unwrap_or_default();
         (tr, crate::ai::load_episode_zh(ctx, &ep.id))
