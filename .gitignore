@@ -28,3 +28,6 @@ dist-ssr
 src-tauri/windows/vcrt/*.dll
 /subcast-0*/
 __pycache__/
+
+# Project-local macOS development toolchains and caches
+/.dev-tools/

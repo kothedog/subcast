@@ -32,6 +32,7 @@ pub mod shadow;
 pub mod shared;
 pub mod speech;
 pub mod subexport;
+pub mod sync;
 pub mod transcript;
 pub mod translate;
 pub mod videoclip;

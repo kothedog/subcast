@@ -177,6 +177,17 @@ pub fn defaults_json() -> Value {
         m.insert(k.into(), v);
     }
     m.insert("shareTranscripts".into(), true.into());
+    m.insert("sync".into(), json!({
+        "icloudEnabled": false,
+        "icloudDir": "",
+        "webdavEnabled": false,
+        "webdavUrl": "",
+        "webdavPath": "/SubCast",
+        "webdavUsername": "",
+        "autoSync": true,
+        "syncProgress": true,
+        "syncContent": true
+    }));
     Value::Object(m)
 }
 

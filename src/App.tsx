@@ -12,6 +12,7 @@ const AddDialog = lazy(() => import("./components/AddDialog").then((m) => ({ def
 import type { View } from "./store";
 import { listen } from "@tauri-apps/api/event";
 import { api } from "./lib/api";
+import { startAutoSync } from "./lib/sync";
 import { detectAgents } from "./lib/agents";
 import { stepSubScale, useReadingSettings } from "./lib/reading";
 import { useRevealOnExpand } from "./lib/reveal";
@@ -51,7 +52,7 @@ export default function App() {
     const offPlaying = useStore.subscribe((s, prev) => { if (prev.playing && !s.playing && s.current) noteListening(s.current, false); });
     window.addEventListener("beforeunload", () => { const c = useStore.getState().current; if (c) noteListening(c, false); });
     // Local AI agents (Claude Code and the like): found once settings are loaded, put to work if nothing else is set up.
-    void init().then(() => { void firstRunSetup(); void detectAgents(); window.setTimeout(() => void remindReview(), 4000); });
+    void init().then(() => { startAutoSync(); void firstRunSetup(); void detectAgents(); window.setTimeout(() => void remindReview(), 4000); });
     // Rendered: tells the app a hot-updated interface works (otherwise it falls back on its own; see ota.rs).
     void api.uiReady().then((info) => useStore.setState({ uiBuild: info.build })).catch(() => {});
     // Shortcuts come from one registry (lib/shortcuts.ts), so Settings › 快捷键 can change them.

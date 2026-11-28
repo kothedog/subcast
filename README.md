@@ -98,6 +98,8 @@ AI 导读、问答和可选的字幕翻译，用你自己的模型服务。推�
 
 ## 开发
 
+本 fork 仅开发 macOS；范围、独立开发配置和启动命令见 [macOS 开发说明](docs/MACOS-DEVELOPMENT.md)。下方保留上游项目的通用说明。
+
 需要 Node.js 22+、Rust（stable）、CMake；Windows 另需 LLVM，Linux 需 `libwebkit2gtk-4.1-dev libdbus-1-dev clang cmake`。
 
 ```sh

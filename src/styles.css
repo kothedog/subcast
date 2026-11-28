@@ -1804,6 +1804,18 @@ body.tape-seek .seek::-webkit-slider-thumb { border-radius: 3px; width: 12px; he
 .key-state { flex: 1; display: inline-flex; align-items: center; gap: 6px; color: var(--ok); font-weight: 600; font-size: 13px; min-width: 0; }
 .key-dots { margin-left: 4px; color: var(--text-2); font-weight: 400; letter-spacing: 1px; overflow: hidden; }
 .key-where { color: var(--text-2); white-space: nowrap; }
+/* Cross-device sync inside Settings › 通用 › 订阅. */
+.sync-box { display: flex; flex-direction: column; gap: 10px; margin-top: 8px; padding-top: 12px; border-top: 1px solid var(--line); }
+.sync-head { display: flex; flex-direction: column; gap: 2px; }
+.sync-sub-title { margin: 0; font-size: 13.5px; font-weight: 600; color: var(--text); }
+.sync-cards { margin-bottom: 0; }
+.sync-card-title { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.sync-badge { font-size: 11px; font-weight: 500; padding: 1px 7px; border-radius: 999px; background: var(--soft); color: var(--text-2); }
+.sync-badge.on { background: color-mix(in srgb, var(--ok) 14%, transparent); color: var(--ok); }
+.sync-path-row { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); }
+.sync-path-text { flex: 1; min-width: 0; }
+.sync-status-line { display: flex; align-items: center; gap: 5px; margin: 0; }
+.sync-shared-opts { display: flex; flex-direction: column; gap: 6px; padding-top: 2px; }
 /* Subtitle language: a button and our own menu (no native select and its focus ring). */
 button.track-pick { border: 0; background: transparent; font: inherit; font-size: 12px; cursor: pointer; }
 button.track-pick span { max-width: 130px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

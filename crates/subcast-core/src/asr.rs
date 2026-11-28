@@ -1201,6 +1201,8 @@ mod scan_tests {
             let Some(engine) = engine_of(&name) else { continue };
             if looks_like_model(&src, engine) { std::os::unix::fs::symlink(&src, models_dir(&data).join(&name)).unwrap(); }
         }
+        // This test uses only its fixtures; do not scan the developer's real model folders.
+        *SCANNED.lock() = Some(std::time::Instant::now());
         let list = list_models(&data);
         let medium = list.iter().find(|m| m.id == "file:ggml-medium.bin").expect("found model listed");
         assert!(medium.installed && medium.from.is_some(), "{:?}", medium.from);

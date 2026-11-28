@@ -3,6 +3,7 @@ import { useShallow } from "zustand/react/shallow";
 import { TopBar } from "./Chrome";
 import { Component, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { t, tk } from "../lib/i18n";
+import { scheduleAutoSync } from "../lib/sync";
 import { rememberEpisodes, updateCachedProgress } from "../lib/cache";
 
 class PanelBoundary extends Component<{ children: ReactNode }, { error: string | null }> {
@@ -285,6 +286,7 @@ function useShowSubscription(ep: Episode) {
       if (!r.show) { notify(t("找不到这个节目的订阅源")); return; }
       setInput(r.show.feedUrl);
       await reloadShows();
+      scheduleAutoSync();
       notify(t("已订阅「{name}」", { name: showName(r.show.title) }));
     } catch (e) { notify(errorText(e)); }
     finally { setBusy(false); }
@@ -298,6 +300,7 @@ function useShowSubscription(ep: Episode) {
       await api.removeShow(show.id, ep.id);
       setInput(show.feedUrl);
       await reloadShows();
+      scheduleAutoSync();
       notify(t("已取消订阅「{name}」", { name: label }));
     } catch (e) { notify(errorText(e)); }
     finally { setBusy(false); }

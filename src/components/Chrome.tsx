@@ -6,6 +6,7 @@ import { useStore, type View } from "../store";
 import { installUpdate, useUpdate } from "../lib/updater";
 import { PICKS, deepPickFor, isSubscribed, pickName, sameFeed, showName } from "../lib/picks";
 import { isChineseUi, kbd, t, tk, tr, tx, useLang } from "../lib/i18n";
+import { scheduleAutoSync } from "../lib/sync";
 import { clock } from "../lib/format";
 import { useShowName } from "../lib/zh";
 import { useJobs } from "../lib/jobs";
@@ -202,7 +203,7 @@ export function TopBar() {
     try {
       const r = await api.addSubscription(input);
       setQ(""); setOpen(false); setResults(null); setActiveIdx(-1);
-      if (r.show) { await reloadShows(); notify(t("已订阅「{name}」", { name: r.show.title })); go({ kind: "show", id: r.show.id }); }
+      if (r.show) { await reloadShows(); scheduleAutoSync(); notify(t("已订阅「{name}」", { name: r.show.title })); go({ kind: "show", id: r.show.id }); }
       else if (r.episode) openEpisode(r.episode);
     } catch (e) { notify(errorText(e)); } finally { setAdding(null); }
   };
