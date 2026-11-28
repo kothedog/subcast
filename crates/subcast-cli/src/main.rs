@@ -109,7 +109,7 @@ fn main() {
             let _ = net::set_proxy(&proxy);
         }
         if let Some(cookies) = cli.yt_cookies {
-            *asr::YT_COOKIES_FILE.write().unwrap() = Some(cookies);
+            *asr::YT_COOKIES_FILE.write() = Some(cookies);
         }
 
         let cancelled = Arc::new(AtomicBool::new(false));

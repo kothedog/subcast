@@ -6,7 +6,8 @@ use serde_json::Value;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use parking_lot::Mutex;
+use std::sync::Arc;
 
 pub const APP_IDENTIFIER: &str = "ai.qiaomu.subcast";
 
@@ -120,13 +121,13 @@ pub fn apply_remote_config(v: &Value) {
 
 pub fn apply_runtime_settings(v: &Value) {
     let _ = net::set_proxy(v["proxy"].as_str().unwrap_or(""));
-    *asr::YT_BROWSER.write().unwrap() = v["ytCookiesBrowser"].as_str().unwrap_or("").to_string();
+    *asr::YT_BROWSER.write() = v["ytCookiesBrowser"].as_str().unwrap_or("").to_string();
     let cf = v["ytCookiesFile"]
         .as_str()
         .map(str::trim)
         .filter(|s| !s.is_empty())
         .map(PathBuf::from);
-    *asr::YT_COOKIES_FILE.write().unwrap() = cf;
+    *asr::YT_COOKIES_FILE.write() = cf;
 }
 
 impl CoreCtx {
@@ -184,13 +185,13 @@ impl CoreCtx {
 
     pub fn job(&self, id: &str) -> Arc<AtomicBool> {
         let flag = Arc::new(AtomicBool::new(false));
-        self.jobs.lock().unwrap().insert(id.to_string(), flag.clone());
+        self.jobs.lock().insert(id.to_string(), flag.clone());
         flag
     }
 
     /// Ends a job: removes only its own entry, so a newer run of the same id stays cancellable.
     pub fn done_with(&self, id: &str, flag: &Arc<AtomicBool>) {
-        let mut jobs = self.jobs.lock().unwrap();
+        let mut jobs = self.jobs.lock();
         if jobs.get(id).is_some_and(|f| Arc::ptr_eq(f, flag)) {
             jobs.remove(id);
         }
@@ -200,19 +201,18 @@ impl CoreCtx {
     pub fn running(&self, id: &str) -> bool {
         self.jobs
             .lock()
-            .unwrap()
             .get(id)
             .is_some_and(|f| !f.load(Ordering::Relaxed))
     }
 
     pub fn cancel(&self, id: &str) {
-        if let Some(f) = self.jobs.lock().unwrap().get(id) {
+        if let Some(f) = self.jobs.lock().get(id) {
             f.store(true, Ordering::Relaxed);
         }
     }
 
     pub fn cancel_all(&self) {
-        for flag in self.jobs.lock().unwrap().values() {
+        for flag in self.jobs.lock().values() {
             flag.store(true, Ordering::Relaxed);
         }
     }

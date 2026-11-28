@@ -220,7 +220,7 @@ pub async fn run_clip(
                     ranges.push((s, e));
                 }
             } else {
-                let raw = db::get_blob(&ctx.db.lock().unwrap(), &ep.id, "highlights")?
+                let raw = db::get_blob(&ctx.db.lock(), &ep.id, "highlights")?
                     .ok_or_else(|| CliError::not_found("请提供 --start/--end，或先运行 highlights extract"))?;
                 let b: highlights::HighlightBundle = serde_json::from_str(&raw)
                     .map_err(|e| CliError::new(1, "parse", e.to_string()))?;

@@ -79,10 +79,14 @@ against `SHA2-256SUMS`. `sync-ytdlp.sh` mirrors the latest release every six hou
 replacing it:
 
 ```bash
-scp server/deploy/sync-ytdlp.sh myvps:/opt/qiaomu-apps/subcast-api/sync-ytdlp.sh
 # /etc/cron.d/subcast-ytdlp
-17 */6 * * * root /opt/qiaomu-apps/subcast-api/sync-ytdlp.sh >> /var/log/subcast-ytdlp.log 2>&1
+17 */6 * * * root /opt/qiaomu-apps/subcast-api/deploy/sync-ytdlp.sh >> /var/log/subcast-ytdlp.log 2>&1
 ```
+
+The cron runs the copy that step 1's rsync puts in `deploy/`. Don't copy the script anywhere else under
+`/opt/qiaomu-apps/subcast-api/`: `rsync --delete` removes files `server/` doesn't have, and the mirror then stops
+updating without any visible error, leaving every client on an old yt-dlp that YouTube may already have broken.
+Check it with `curl -s https://subcast.qiaomu.ai/tools/yt-dlp/VERSION` and `tail /var/log/subcast-ytdlp.log`.
 
 Files live in `/www/wwwroot/subcast-tools/` (outside the website root, so website deploys never delete them),
 served by `location ^~ /tools/ { alias /www/wwwroot/subcast-tools/; }` in the subcast.qiaomu.ai vhost.

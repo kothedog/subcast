@@ -150,8 +150,8 @@ fn model_roots() -> Vec<(PathBuf, usize)> {
 
 /// Links usable model files found elsewhere on this computer into our models folder (nothing is copied or
 /// downloaded; deleting the link here never touches the original). Runs at most once a minute.
-static OTHER_FORMATS: std::sync::Mutex<Vec<PathBuf>> = std::sync::Mutex::new(Vec::new());
-static SEEN_ELSEWHERE: std::sync::Mutex<Vec<Elsewhere>> = std::sync::Mutex::new(Vec::new());
+static OTHER_FORMATS: parking_lot::Mutex<Vec<PathBuf>> = parking_lot::Mutex::new(Vec::new());
+static SEEN_ELSEWHERE: parking_lot::Mutex<Vec<Elsewhere>> = parking_lot::Mutex::new(Vec::new());
 
 /// A Qwen3-ASR copy another app has, in a format SubCast can't run.
 #[derive(Serialize, Clone, Debug, PartialEq)]
@@ -189,17 +189,17 @@ fn walkdir_names(d: &Path, depth: usize) -> Vec<String> {
 }
 
 /// Qwen3-ASR copies found in other apps that SubCast can't use (format), from the last scan.
-pub fn elsewhere() -> Vec<Elsewhere> { SEEN_ELSEWHERE.lock().unwrap().clone() }
+pub fn elsewhere() -> Vec<Elsewhere> { SEEN_ELSEWHERE.lock().clone() }
 
 /// Looks again on the next list (Settings › 重新查找).
-pub fn rescan() { *SCANNED.lock().unwrap() = None; }
-static SCANNED: std::sync::Mutex<Option<std::time::Instant>> = std::sync::Mutex::new(None);
+pub fn rescan() { *SCANNED.lock() = None; }
+static SCANNED: parking_lot::Mutex<Option<std::time::Instant>> = parking_lot::Mutex::new(None);
 
 fn adopt_found(data: &Path) {
     let last_scan = &SCANNED;
 
     {
-        let mut last = last_scan.lock().unwrap();
+        let mut last = last_scan.lock();
         if last.is_some_and(|t| t.elapsed().as_secs() < 60) { return; }
         *last = Some(std::time::Instant::now());
     }
@@ -221,7 +221,7 @@ fn adopt_found(data: &Path) {
             if (ft.is_file() || ft.is_symlink()) && engine_of(&name).is_some() { out.push(path.clone()); }
             // Qwen3-ASR in formats CrispASR can't read (Hugging Face / MLX safetensors folders), noted for the
             // settings page so the listener knows why it isn't used.
-            if ft.is_dir() && name.to_lowercase().replace(['_', '-'], "").contains("qwen3asr") { OTHER_FORMATS.lock().unwrap().push(path.clone()); }
+            if ft.is_dir() && name.to_lowercase().replace(['_', '-'], "").contains("qwen3asr") { OTHER_FORMATS.lock().push(path.clone()); }
             else if ft.is_dir() && depth > 0 && !name.starts_with('.') || (ft.is_dir() && depth > 0 && (name == ".cache" || name.starts_with("models--"))) {
                 if matches!(name.as_str(), "node_modules" | "Caches" | "Logs" | "CrashReporter" | "Photos" | "MobileSync") { continue; }
                 walk(&path, depth - 1, own, out, budget);
@@ -230,7 +230,7 @@ fn adopt_found(data: &Path) {
     }
     let mut budget = 60_000;
     for (root, depth) in model_roots() { walk(&root, depth, &own, &mut found, &mut budget); }
-    *SEEN_ELSEWHERE.lock().unwrap() = describe_other(std::mem::take(&mut *OTHER_FORMATS.lock().unwrap()));
+    *SEEN_ELSEWHERE.lock() = describe_other(std::mem::take(&mut *OTHER_FORMATS.lock()));
     for src in found {
         let Some(name) = src.file_name().map(|n| n.to_string_lossy().to_string()) else { continue };
         let Some(engine) = engine_of(&name) else { continue };
@@ -240,7 +240,7 @@ fn adopt_found(data: &Path) {
         // llama.cpp-style Qwen3-ASR comes as two files (the audio encoder in an mmproj file); CrispASR needs the
         // single-file GGUF, so those (Cap's, for one) can't be used.
         if engine == "qwen3" && real.parent().and_then(|d| std::fs::read_dir(d).ok()).is_some_and(|rd| rd.flatten().any(|e| e.file_name().to_string_lossy().to_lowercase().starts_with("mmproj"))) {
-            if let Some(d) = real.parent() { SEEN_ELSEWHERE.lock().unwrap().push(Elsewhere { app: app_of(d), format: "GGUF（llama.cpp 分体）".into() }); }
+            if let Some(d) = real.parent() { SEEN_ELSEWHERE.lock().push(Elsewhere { app: app_of(d), format: "GGUF（llama.cpp 分体）".into() }); }
             continue;
         }
         #[cfg(unix)]
@@ -319,11 +319,15 @@ fn ytdlp_asset() -> &'static str {
 }
 
 /// Downloads yt-dlp from the mirror, else GitHub, and keeps it only if it matches that release's SHA2-256SUMS.
-pub async fn install_ytdlp(data: &Path, cancel: &AtomicBool, mut progress: impl FnMut(u64, Option<u64>)) -> Result<PathBuf> {
+pub async fn install_ytdlp(data: &Path, cancel: &AtomicBool, progress: impl FnMut(u64, Option<u64>)) -> Result<PathBuf> {
+    install_ytdlp_from(data, &[YTDLP_MIRROR, YTDLP_GITHUB], cancel, progress).await
+}
+
+async fn install_ytdlp_from(data: &Path, sources: &[&str], cancel: &AtomicBool, mut progress: impl FnMut(u64, Option<u64>)) -> Result<PathBuf> {
     let name = ytdlp_asset();
     let dest = data.join("bin").join(exe("yt-dlp"));
     let mut failure = None;
-    for base in [YTDLP_MIRROR, YTDLP_GITHUB] {
+    for &base in sources {
         match fetch_checked(base, name, &dest, cancel, &mut progress).await {
             Ok(()) => { failure = None; break; }
             Err(e) if e.to_string().contains("已取消") => return Err(e),
@@ -403,19 +407,41 @@ pub async fn update_ytdlp(data: &Path, force: bool) -> Result<bool> {
     }
     if let Some(dir) = stamp.parent() { std::fs::create_dir_all(dir)?; }
     std::fs::write(&stamp, b"")?;
-    let latest = match net::get_text(&format!("{YTDLP_MIRROR}/VERSION")).await {
-        Ok(v) if !v.trim().is_empty() => v.trim().to_string(),
-        _ => {
-            let res = net::client().get("https://api.github.com/repos/yt-dlp/yt-dlp/releases/latest")
-                .header("User-Agent", "SubCast").header("Accept", "application/vnd.github+json").send().await?;
-            if !res.status().is_success() { return Err(anyhow!("GitHub {}", res.status().as_u16())); }
-            res.json::<serde_json::Value>().await?["tag_name"].as_str().unwrap_or_default().to_string()
-        }
+    // Both are asked: the mirror can fall behind GitHub when its sync job stops, and an old yt-dlp is exactly what
+    // YouTube breaks, so then only GitHub has a release that works.
+    let (mirror, github) = tokio::join!(mirror_ytdlp_version(), github_ytdlp_version());
+    let (latest, sources): (String, &[&str]) = match (mirror, github) {
+        (Ok(m), Ok(g)) if newer_version(&g, &m) => (g, &[YTDLP_GITHUB]),
+        (Ok(m), _) => (m, &[YTDLP_MIRROR, YTDLP_GITHUB]),
+        (Err(_), Ok(g)) => (g, &[YTDLP_MIRROR, YTDLP_GITHUB]),
+        (Err(_), Err(e)) => return Err(e),
     };
     if latest.is_empty() { return Ok(false); }
-    if own.is_file() && ytdlp_version(&own).await.as_deref() == Some(latest.as_str()) { return Ok(false); }
-    install_ytdlp(data, &AtomicBool::new(false), |_, _| {}).await?;
+    // Never back to an older one: a copy taken from GitHub stays when only the stale mirror answers later.
+    if own.is_file() && ytdlp_version(&own).await.is_some_and(|cur| cur == latest || newer_version(&cur, &latest)) { return Ok(false); }
+    install_ytdlp_from(data, sources, &AtomicBool::new(false), |_, _| {}).await?;
     Ok(true)
+}
+
+async fn mirror_ytdlp_version() -> Result<String> {
+    let v = net::get_text(&format!("{YTDLP_MIRROR}/VERSION")).await?.trim().to_string();
+    // Only GitHub's error is ever shown (when both fail), so this one needs no translation.
+    if v.is_empty() { return Err(anyhow!("mirror VERSION is empty")); }
+    Ok(v)
+}
+
+async fn github_ytdlp_version() -> Result<String> {
+    let res = net::client().get("https://api.github.com/repos/yt-dlp/yt-dlp/releases/latest")
+        .header("User-Agent", "SubCast").header("Accept", "application/vnd.github+json").send().await?;
+    if !res.status().is_success() { return Err(anyhow!("GitHub {}", res.status().as_u16())); }
+    Ok(res.json::<serde_json::Value>().await?["tag_name"].as_str().unwrap_or_default().to_string())
+}
+
+/// yt-dlp versions are dates with an optional build number (`2026.11.23`, `2026.11.22.232654`); anything else
+/// counts as not newer.
+fn newer_version(a: &str, b: &str) -> bool {
+    let parse = |v: &str| v.split('.').map(|p| p.parse::<u64>()).collect::<Result<Vec<_>, _>>();
+    matches!((parse(a), parse(b)), (Ok(x), Ok(y)) if x > y)
 }
 
 /// Runs a yt-dlp job; when it fails, updates yt-dlp (if a newer one exists) and tries once more.
@@ -434,11 +460,11 @@ where F: Fn(PathBuf) -> Fut, Fut: std::future::Future<Output = Result<T>> {
 }
 /// The browser whose YouTube sign-in yt-dlp may use when YouTube asks to "confirm you're not a bot" (Settings ›
 /// 通用; empty = never). Read from the browser each time, never stored by SubCast.
-pub static YT_BROWSER: std::sync::RwLock<String> = std::sync::RwLock::new(String::new());
+pub static YT_BROWSER: parking_lot::RwLock<String> = parking_lot::RwLock::new(String::new());
 
 /// Explicit Netscape cookie file path supplied by CLI or settings (never deleted by SubCast).
-pub static YT_COOKIES_FILE: once_cell::sync::Lazy<std::sync::RwLock<Option<PathBuf>>> =
-    once_cell::sync::Lazy::new(|| std::sync::RwLock::new(None));
+pub static YT_COOKIES_FILE: once_cell::sync::Lazy<parking_lot::RwLock<Option<PathBuf>>> =
+    once_cell::sync::Lazy::new(|| parking_lot::RwLock::new(None));
 
 /// Optional desktop cookie provider callback (creates a temporary Netscape jar that SubCast deletes after one run).
 pub type CookieProvider = Box<
@@ -480,7 +506,7 @@ where F: Fn(Vec<String>) -> Fut, Fut: std::future::Future<Output = Result<T>> {
             let alt = vec!["--extractor-args".to_string(), "youtube:player_client=tv,web_safari,mweb".to_string()];
             match job(alt).await {
                 Err(e2) if bot_check(&e2.to_string()) => {
-                    let file_cookie = YT_COOKIES_FILE.read().unwrap().clone().filter(|p| p.is_file());
+                    let file_cookie = YT_COOKIES_FILE.read().clone().filter(|p| p.is_file());
                     if let Some(jar) = file_cookie {
                         return job(vec!["--cookies".into(), jar.to_string_lossy().into_owned()]).await;
                     }
@@ -492,7 +518,7 @@ where F: Fn(Vec<String>) -> Fut, Fut: std::future::Future<Output = Result<T>> {
                             return r.map_err(|e3| if bot_check(&e3.to_string()) { anyhow!(YT_SIGN_IN_AGAIN) } else { e3 });
                         }
                     }
-                    let browser = YT_BROWSER.read().unwrap().clone();
+                    let browser = YT_BROWSER.read().clone();
                     if browser.is_empty() { return Err(anyhow!("YouTube 要求验证「不是机器人」。选一个已登录 YouTube 的浏览器，SubCast 借用它的登录再试")); }
                     { let b = browser.clone(); tokio::task::spawn_blocking(move || crate::import::ensure_browser_access(&b)).await??; }
                     job(vec!["--cookies-from-browser".into(), browser.clone()]).await
@@ -518,14 +544,14 @@ pub async fn warm_ytdlp(ytdlp: &Path) {
 }
 
 fn knows_js_runtimes(ytdlp: &Path) -> bool {
-    static SEEN: once_cell::sync::Lazy<std::sync::Mutex<std::collections::HashMap<PathBuf, bool>>> = once_cell::sync::Lazy::new(Default::default);
-    if let Some(v) = SEEN.lock().unwrap().get(ytdlp) { return *v; }
+    static SEEN: once_cell::sync::Lazy<parking_lot::Mutex<std::collections::HashMap<PathBuf, bool>>> = once_cell::sync::Lazy::new(Default::default);
+    if let Some(v) = SEEN.lock().get(ytdlp) { return *v; }
     let mut c = std::process::Command::new(ytdlp);
     c.arg("--help");
     #[cfg(windows)]
     { use std::os::windows::process::CommandExt; c.creation_flags(0x08000000); }
     let ok = c.output().map(|o| String::from_utf8_lossy(&o.stdout).contains("--js-runtimes")).unwrap_or(false);
-    SEEN.lock().unwrap().insert(ytdlp.to_path_buf(), ok);
+    SEEN.lock().insert(ytdlp.to_path_buf(), ok);
     ok
 }
 
@@ -657,14 +683,14 @@ pub async fn youtube_stream_url(ytdlp: &Path, video_id: &str, hls: bool, fresh: 
 }
 
 /// Each video's length (seconds) as yt-dlp last reported it, for episodes whose feed gave none.
-static DURATIONS: once_cell::sync::Lazy<std::sync::Mutex<std::collections::HashMap<String, f64>>> = once_cell::sync::Lazy::new(Default::default);
-pub fn video_duration(video_id: &str) -> Option<f64> { DURATIONS.lock().unwrap().get(video_id).copied() }
+static DURATIONS: once_cell::sync::Lazy<parking_lot::Mutex<std::collections::HashMap<String, f64>>> = once_cell::sync::Lazy::new(Default::default);
+pub fn video_duration(video_id: &str) -> Option<f64> { DURATIONS.lock().get(video_id).copied() }
 
 /// Resolved video addresses, kept in memory and in `streams.json` next to the app's data.
 pub mod streams {
     use std::collections::HashMap;
     use std::path::PathBuf;
-    use std::sync::Mutex;
+    use parking_lot::Mutex;
     use std::time::{SystemTime, UNIX_EPOCH};
 
     static FILE: once_cell::sync::OnceCell<PathBuf> = once_cell::sync::OnceCell::new();
@@ -688,12 +714,12 @@ pub mod streams {
     }
 
     pub fn get(key: &str) -> Option<String> {
-        let map = MAP.lock().unwrap();
+        let map = MAP.lock();
         map.get(key).filter(|(_, until)| *until > now()).map(|(u, _)| u.clone())
     }
 
     pub fn forget(key: &str) {
-        let mut map = MAP.lock().unwrap();
+        let mut map = MAP.lock();
         if map.remove(key).is_some() {
             if let (Some(f), Ok(b)) = (FILE.get(), serde_json::to_vec(&*map)) { let _ = std::fs::write(f, b); }
         }
@@ -702,7 +728,7 @@ pub mod streams {
     pub fn put(key: &str, url: &str) {
         let t = now();
         let until = expiry(url).map(|e| e.saturating_sub(MARGIN)).unwrap_or(t + DEFAULT_LIFE);
-        let mut map = MAP.lock().unwrap();
+        let mut map = MAP.lock();
         map.retain(|_, (_, u)| *u > t);
         if until > t { map.insert(key.to_string(), (url.to_string(), until)); }
         if let (Some(f), Ok(b)) = (FILE.get(), serde_json::to_vec(&*map)) { let _ = std::fs::write(f, b); }
@@ -736,7 +762,7 @@ async fn stream_once(ytdlp: &Path, video_id: &str, hls: bool, extra: &[String]) 
     let info: serde_json::Value = serde_json::from_slice(&out.stdout).map_err(|_| {
         anyhow!("无法获取视频地址：{}", String::from_utf8_lossy(&out.stderr).lines().last().unwrap_or("").chars().take(200).collect::<String>())
     })?;
-    if let Some(d) = info["duration"].as_f64().filter(|d| *d > 0.0) { DURATIONS.lock().unwrap().insert(video_id.to_string(), d); }
+    if let Some(d) = info["duration"].as_f64().filter(|d| *d > 0.0) { DURATIONS.lock().insert(video_id.to_string(), d); }
     let formats = info["formats"].as_array().cloned().unwrap_or_default();
     if hls {
         if let Some(u) = formats.iter().filter(|f| f["protocol"].as_str().is_some_and(|p| p.starts_with("m3u8"))).find_map(|f| f["manifest_url"].as_str()) {
@@ -1218,5 +1244,20 @@ mod video_file_tests {
         assert!((pcm.len() as f64 / 16000.0 - 3.0).abs() < 0.3, "{} samples", pcm.len());
         assert!(pcm.iter().any(|x| x.abs() > 0.05));
         let _ = std::fs::remove_dir_all(&dir);
+    }
+}
+
+#[cfg(test)]
+mod ytdlp_version_tests {
+    use super::newer_version;
+    #[test]
+    fn compares_release_dates() {
+        assert!(newer_version("2026.11.23", "2026.10.26"));
+        assert!(newer_version("2026.11.22.232654", "2026.11.22"));
+        assert!(newer_version("2027.01.02", "2026.12.31"));
+        assert!(!newer_version("2026.10.26", "2026.11.23"));
+        assert!(!newer_version("2026.11.23", "2026.11.23"));
+        assert!(!newer_version("", "2026.11.23"));
+        assert!(!newer_version("2026.11.23", "nightly"));
     }
 }

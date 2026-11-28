@@ -240,7 +240,7 @@ pub fn review_queue(book: &Book, daily_new: u32, now_ms: i64) -> Vec<Word> {
 }
 
 pub fn load_book(ctx: &CoreCtx) -> Result<Book> {
-    let raw = db::get_blob(&ctx.db.lock().unwrap(), "learn", "words")?;
+    let raw = db::get_blob(&ctx.db.lock(), "learn", "words")?;
     Ok(raw.and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default())
 }
 
@@ -248,7 +248,7 @@ pub fn mutate_book<F, R>(ctx: &CoreCtx, f: F) -> Result<R>
 where
     F: FnOnce(&mut Book) -> Result<R>,
 {
-    let mut conn = ctx.db.lock().unwrap();
+    let mut conn = ctx.db.lock();
     let mut out: Option<R> = None;
     db::update_blob(&mut conn, "learn", "words", |cur| {
         let mut book: Book = cur.and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default();

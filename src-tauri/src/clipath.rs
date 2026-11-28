@@ -6,7 +6,7 @@
 //! and SubCast's folder on Windows is on nobody's), one marked line goes into the shell's startup file, or the
 //! folder into the Windows user PATH. Nothing else in those files is touched.
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use parking_lot::Mutex;
 
 /// The marker on the line SubCast adds, so it is added once and can be found again.
 #[cfg(unix)]
@@ -20,9 +20,9 @@ fn same_dir(a: &Path, b: &Path) -> bool {
 
 /// The folders a new terminal window searches (cached; cleared after SubCast changes them).
 fn terminal_path() -> Vec<PathBuf> {
-    if let Some(p) = SHELL_PATH.lock().unwrap().clone() { return p; }
+    if let Some(p) = SHELL_PATH.lock().clone() { return p; }
     let found = read_terminal_path().unwrap_or_default();
-    *SHELL_PATH.lock().unwrap() = Some(found.clone());
+    *SHELL_PATH.lock() = Some(found.clone());
     found
 }
 
@@ -115,7 +115,7 @@ fn startup_file(dir: &Path) -> Option<(PathBuf, String)> {
 pub fn ensure(dir: &Path) -> Option<String> {
     if in_path(dir) { return None; }
     let added = add(dir)?;
-    *SHELL_PATH.lock().unwrap() = None;
+    *SHELL_PATH.lock() = None;
     Some(added)
 }
 

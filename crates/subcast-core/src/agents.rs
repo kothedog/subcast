@@ -445,7 +445,7 @@ struct Rpc {
     waiting: Arc<Mutex<HashMap<u64, oneshot::Sender<Value>>>>,
     events: Mutex<mpsc::UnboundedReceiver<Value>>,
     dead: Arc<AtomicBool>,
-    stderr: Arc<std::sync::Mutex<String>>,
+    stderr: Arc<parking_lot::Mutex<String>>,
     /// Set once the child's stderr has closed, so everything it wrote before exiting is in `stderr`.
     stderr_done: Arc<AtomicBool>,
 }
@@ -461,7 +461,7 @@ impl Rpc {
         let waiting: Arc<Mutex<HashMap<u64, oneshot::Sender<Value>>>> = Arc::default();
         let (tx, rx) = mpsc::unbounded_channel();
         let dead = Arc::new(AtomicBool::new(false));
-        let err_tail = Arc::new(std::sync::Mutex::new(String::new()));
+        let err_tail = Arc::new(parking_lot::Mutex::new(String::new()));
         let err_done = Arc::new(AtomicBool::new(false));
         {
             let (waiting, dead) = (waiting.clone(), dead.clone());
@@ -484,7 +484,7 @@ impl Rpc {
             tokio::spawn(async move {
                 let mut lines = BufReader::new(stderr).lines();
                 while let Ok(Some(line)) = lines.next_line().await {
-                    let mut t = tail.lock().unwrap();
+                    let mut t = tail.lock();
                     t.push_str(&line); t.push('\n');
                     if t.len() > 4000 { let cut = t.len() - 2000; *t = t[cut..].to_string(); }
                 }
@@ -502,10 +502,10 @@ impl Rpc {
         if self.alive() { return None; }
         let t = Instant::now();
         while !self.stderr_done.load(Ordering::Relaxed) && t.elapsed() < Duration::from_secs(2) { tokio::time::sleep(Duration::from_millis(50)).await; }
-        Some(self.stderr.lock().unwrap().clone())
+        Some(self.stderr.lock().clone())
     }
 
-    fn last_error(&self) -> String { self.stderr.lock().unwrap().lines().rev().find(|l| !l.trim().is_empty()).unwrap_or("").chars().take(200).collect() }
+    fn last_error(&self) -> String { self.stderr.lock().lines().rev().find(|l| !l.trim().is_empty()).unwrap_or("").chars().take(200).collect() }
 
     async fn send(&self, v: &Value) -> Result<()> {
         let mut s = self.stdin.lock().await;
@@ -657,23 +657,23 @@ impl Codex {
 
 /// `spare`: a session already asked for while the process was idle, so the next question skips the ~2–3 s
 /// session/new (each request still gets its own session, so answers never see each other's text).
-struct Acp { kind: Kind, rpc: Rpc, spare: std::sync::Mutex<Option<oneshot::Receiver<Value>>> }
+struct Acp { kind: Kind, rpc: Rpc, spare: parking_lot::Mutex<Option<oneshot::Receiver<Value>>> }
 
 /// Marks a start refused because this agy has no `acp` (agy_friendly turns it into an upgrade hint).
 const AGY_TOO_OLD: &str = "agy has no acp server";
 
 /// `agy acp --help` per binary (path, size, modified time), so an update asks again.
-static AGY_HELP: once_cell::sync::Lazy<std::sync::Mutex<HashMap<String, String>>> = once_cell::sync::Lazy::new(Default::default);
+static AGY_HELP: once_cell::sync::Lazy<parking_lot::Mutex<HashMap<String, String>>> = once_cell::sync::Lazy::new(Default::default);
 
 async fn agy_acp_help(path: &Path) -> String {
     let key = match std::fs::metadata(path) {
         Ok(md) => format!("{}|{}|{:?}", path.display(), md.len(), md.modified().ok()),
         Err(_) => path.display().to_string(),
     };
-    if let Some(h) = AGY_HELP.lock().unwrap().get(&key) { return h.clone(); }
+    if let Some(h) = AGY_HELP.lock().get(&key) { return h.clone(); }
     let help = output(path, &["acp", "--help"], 15).await.unwrap_or_default();
     // An empty answer (timed out) is asked again next time.
-    if !help.trim().is_empty() { AGY_HELP.lock().unwrap().insert(key, help.clone()); }
+    if !help.trim().is_empty() { AGY_HELP.lock().insert(key, help.clone()); }
     help
 }
 
@@ -730,7 +730,7 @@ fn acp_args(kind: Kind) -> &'static [&'static str] {
 const ACP_FLAGS: [&str; 2] = ["--acp", "--experimental-acp"];
 
 /// The flag each executable accepted, so later starts try it first and don't spend a process on the other.
-static ACP_FLAG: once_cell::sync::Lazy<std::sync::Mutex<HashMap<PathBuf, &'static str>>> = once_cell::sync::Lazy::new(Default::default);
+static ACP_FLAG: once_cell::sync::Lazy<parking_lot::Mutex<HashMap<PathBuf, &'static str>>> = once_cell::sync::Lazy::new(Default::default);
 
 fn uses_acp_flag(kind: Kind) -> bool { matches!(kind, Kind::Gemini | Kind::Qwen) }
 
@@ -766,11 +766,11 @@ async fn initialize(rpc: &Rpc) -> Result<()> {
 
 /// Starts Gemini CLI or Qwen Code with the ACP flag its version knows.
 async fn spawn_with_acp_flag(kind: Kind, path: &Path) -> Result<Rpc> {
-    let known = ACP_FLAG.lock().unwrap().get(path).copied();
+    let known = ACP_FLAG.lock().get(path).copied();
     for flag in acp_flag_order(known) {
         let rpc = Rpc::spawn(path, &[flag]).await?;
         match initialize(&rpc).await {
-            Ok(()) => { ACP_FLAG.lock().unwrap().insert(path.to_path_buf(), flag); return Ok(rpc); }
+            Ok(()) => { ACP_FLAG.lock().insert(path.to_path_buf(), flag); return Ok(rpc); }
             Err(e) => {
                 let rejected = rpc.stderr_after_exit().await.is_some_and(|s| is_unknown_acp_arg(&s));
                 rpc.close().await;
@@ -779,7 +779,7 @@ async fn spawn_with_acp_flag(kind: Kind, path: &Path) -> Result<Rpc> {
         }
     }
     // Not remembered: after upgrading, 重新检测 tries again.
-    ACP_FLAG.lock().unwrap().remove(path);
+    ACP_FLAG.lock().remove(path);
     Err(too_old(kind, path))
 }
 
@@ -797,7 +797,7 @@ impl Acp {
             initialize(&rpc).await?;
             rpc
         };
-        let acp = Acp { kind, rpc, spare: std::sync::Mutex::new(None) };
+        let acp = Acp { kind, rpc, spare: parking_lot::Mutex::new(None) };
         acp.prepare_session().await;
         Ok(acp)
     }
@@ -809,13 +809,13 @@ impl Acp {
         let (tx, rx) = oneshot::channel();
         self.rpc.waiting.lock().await.insert(id, tx);
         if self.rpc.send(&json!({ "jsonrpc": "2.0", "id": id, "method": "session/new", "params": { "cwd": dir.to_string_lossy(), "mcpServers": [] } })).await.is_ok() {
-            *self.spare.lock().unwrap() = Some(rx);
+            *self.spare.lock() = Some(rx);
         }
     }
 
     /// The prepared session if it came through, else a new one.
     async fn session(&self) -> Result<String> {
-        let spare = self.spare.lock().unwrap().take();
+        let spare = self.spare.lock().take();
         if let Some(rx) = spare {
             if let Ok(Ok(v)) = tokio::time::timeout(Duration::from_secs(30), rx).await {
                 if let Some(id) = v["result"]["sessionId"].as_str() { return Ok(id.to_string()); }
@@ -1058,6 +1058,6 @@ mod acp_flag_tests {
     async fn start_given_gemini() {
         let path = PathBuf::from(std::env::var("GEMINI_PATH").expect("GEMINI_PATH"));
         let r = probe(Kind::Gemini, &path).await;
-        println!("probe: {r:?}\nflag: {:?}", ACP_FLAG.lock().unwrap().get(&path));
+        println!("probe: {r:?}\nflag: {:?}", ACP_FLAG.lock().get(&path));
     }
 }

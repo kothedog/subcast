@@ -248,12 +248,12 @@ async fn call_tool(ctx: &CoreCtx, name: &str, args: &Value) -> anyhow::Result<Va
     let sink = NoopSink;
     match name {
         "list_shows" => {
-            let shows = db::list_shows(&ctx.db.lock().unwrap())?;
+            let shows = db::list_shows(&ctx.db.lock())?;
             Ok(serde_json::to_value(shows)?)
         }
         "list_episodes" => {
             let limit = args["limit"].as_i64().unwrap_or(20);
-            let conn = ctx.db.lock().unwrap();
+            let conn = ctx.db.lock();
             let eps = if let Some(s) = args["show"].as_str().filter(|s| !s.is_empty()) {
                 let sh = resolver::resolve_show(&conn, s)?;
                 db::list_episodes(&conn, Some(&sh.id), limit)?
@@ -265,7 +265,7 @@ async fn call_tool(ctx: &CoreCtx, name: &str, args: &Value) -> anyhow::Result<Va
         "search_episodes" => {
             let show = args["show"].as_str().unwrap_or("");
             let query = args["query"].as_str().unwrap_or("");
-            let sh = resolver::resolve_show(&ctx.db.lock().unwrap(), show)?;
+            let sh = resolver::resolve_show(&ctx.db.lock(), show)?;
             let hits = ops::search_show(ctx, &sh.id, query).await?;
             Ok(serde_json::to_value(hits)?)
         }
@@ -293,7 +293,7 @@ async fn call_tool(ctx: &CoreCtx, name: &str, args: &Value) -> anyhow::Result<Va
         "get_episode" => {
             let r = args["reference"].as_str().unwrap_or("");
             let ep = episode_of(ctx, r).await?;
-            let tr = db::get_transcript(&ctx.db.lock().unwrap(), &ep.id)?;
+            let tr = db::get_transcript(&ctx.db.lock(), &ep.id)?;
             Ok(json!({ "episode": ep, "segments": tr.map(|t| t.segments.len()).unwrap_or(0) }))
         }
         "get_transcript" => {
@@ -303,7 +303,7 @@ async fn call_tool(ctx: &CoreCtx, name: &str, args: &Value) -> anyhow::Result<Va
             let content = subexport::SubContent::parse(args["content"].as_str().unwrap_or("bilingual"))
                 .unwrap_or(subexport::SubContent::Bilingual);
             let ep = episode_of(ctx, r).await?;
-            let tr = db::get_transcript(&ctx.db.lock().unwrap(), &ep.id)?
+            let tr = db::get_transcript(&ctx.db.lock(), &ep.id)?
                 .ok_or_else(|| anyhow::anyhow!("暂无字幕"))?;
             let zh = ai::load_episode_zh(ctx, &ep.id);
             let cues = subexport::build_cues(&tr.segments, zh.as_deref(), content);
@@ -477,7 +477,7 @@ async fn call_tool(ctx: &CoreCtx, name: &str, args: &Value) -> anyhow::Result<Va
             }
         }
         "doctor" => {
-            let conn = ctx.db.lock().unwrap();
+            let conn = ctx.db.lock();
             let shows = db::list_shows(&conn)?.len();
             let eps: i64 = conn.query_row("SELECT COUNT(*) FROM episodes", [], |r| r.get(0))?;
             Ok(json!({ "ok": true, "dataDir": ctx.data, "shows": shows, "episodes": eps }))
@@ -562,9 +562,9 @@ pub async fn run_mcp(ctx: &CoreCtx) -> Result<(), CliError> {
             "resources/read" => {
                 let uri = req["params"]["uri"].as_str().unwrap_or("");
                 let content = match uri {
-                    "subcast://shows" => serde_json::to_string_pretty(&db::list_shows(&ctx.db.lock().unwrap())?).ok(),
+                    "subcast://shows" => serde_json::to_string_pretty(&db::list_shows(&ctx.db.lock())?).ok(),
                     "subcast://vocab" => serde_json::to_string_pretty(&vocab::load_book(ctx)?).ok(),
-                    "subcast://stats" => serde_json::to_string_pretty(&db::listens_since(&ctx.db.lock().unwrap(), "1970-01-01")?).ok(),
+                    "subcast://stats" => serde_json::to_string_pretty(&db::listens_since(&ctx.db.lock(), "1970-01-01")?).ok(),
                     _ => None,
                 };
                 match content {

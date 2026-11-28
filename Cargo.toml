@@ -6,5 +6,8 @@ members = ["crates/subcast-core", "crates/subcast-cli", "src-tauri"]
 codegen-units = 1
 lto = true
 opt-level = 3
-panic = "abort"
+# No `panic = "abort"`, though Tauri's size guide suggests it. wry wraps WebKit calls such as
+# `WKURLSchemeTask didFinish` in `objc2::exception::catch`. That catch needs unwinding. Under abort,
+# WebKit cancelling a video range request (clip preview seek/close) killed the whole app (0.3.7).
+# Release builds on macOS add a dSYM through env vars in scripts/release.sh.
 strip = true

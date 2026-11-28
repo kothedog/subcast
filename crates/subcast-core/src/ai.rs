@@ -349,7 +349,7 @@ pub async fn make_episode_context(
         String::new()
     };
     let basis = format!("{}|{}|{}|{}", resolved.provider.model, ep.title, notes_raw.chars().count(), t.segments.len());
-    let old: Option<EpisodeContext> = db::get_blob(&ctx.db.lock().unwrap(), &ep.id, "ctx")
+    let old: Option<EpisodeContext> = db::get_blob(&ctx.db.lock(), &ep.id, "ctx")
         .ok()
         .flatten()
         .and_then(|raw| serde_json::from_str(&raw).ok());
@@ -429,7 +429,7 @@ pub async fn make_episode_context(
         return old;
     }
     let ctx_obj = EpisodeContext { summary, speakers, terms, basis: Some(basis) };
-    let _ = db::set_blob(&ctx.db.lock().unwrap(), &ep.id, "ctx", &serde_json::to_string(&ctx_obj).unwrap_or_default());
+    let _ = db::set_blob(&ctx.db.lock(), &ep.id, "ctx", &serde_json::to_string(&ctx_obj).unwrap_or_default());
     Some(ctx_obj)
 }
 
@@ -456,8 +456,8 @@ pub async fn translate_episode(
     use_context: bool,
     sink: &dyn ProgressSink,
 ) -> Result<TranslateReport> {
-    let ep = db::get_episode(&ctx.db.lock().unwrap(), episode_id)?.ok_or_else(|| anyhow!("节目不存在"))?;
-    let t = db::get_transcript(&ctx.db.lock().unwrap(), episode_id)?.ok_or_else(|| anyhow!("没有字幕"))?;
+    let ep = db::get_episode(&ctx.db.lock(), episode_id)?.ok_or_else(|| anyhow!("节目不存在"))?;
+    let t = db::get_transcript(&ctx.db.lock(), episode_id)?.ok_or_else(|| anyhow!("没有字幕"))?;
     let cfg = settings::load_effective(ctx)?;
     let resolved = settings::resolve_translate_provider(ctx, provider_override, model_override);
     let engine = match mode {
@@ -479,19 +479,19 @@ pub async fn translate_episode(
             }
         }
     };
-    let old_engine = db::get_blob(&ctx.db.lock().unwrap(), episode_id, "zh-engine")?;
+    let old_engine = db::get_blob(&ctx.db.lock(), episode_id, "zh-engine")?;
     let keep_old = !force && matches!(old_engine.as_deref(), Some("youtube") | Some("shared"));
     let mut items: Vec<Option<String>> = if force || (!keep_old && old_engine.as_deref().is_some_and(|e| e != engine)) {
         vec![None; t.segments.len()]
     } else {
-        db::get_blob(&ctx.db.lock().unwrap(), episode_id, "zh")?
+        db::get_blob(&ctx.db.lock(), episode_id, "zh")?
             .and_then(|s| serde_json::from_str(&s).ok())
             .filter(|v: &Vec<Option<String>>| v.len() == t.segments.len())
             .unwrap_or_else(|| vec![None; t.segments.len()])
     };
     let label = if keep_old { old_engine.unwrap_or_else(|| engine.to_string()) } else { engine.to_string() };
     {
-        let conn = ctx.db.lock().unwrap();
+        let conn = ctx.db.lock();
         db::set_blob(&conn, episode_id, "zh-engine", &label)?;
     }
 
@@ -552,14 +552,14 @@ pub async fn translate_episode(
                         queue.insert(0, Batch { ids: b.ids[mid..].to_vec() });
                         queue.insert(0, Batch { ids: b.ids[..mid].to_vec() });
                     } else {
-                        let _ = db::set_blob(&ctx.db.lock().unwrap(), episode_id, "zh", &serde_json::to_string(&items)?);
+                        let _ = db::set_blob(&ctx.db.lock(), episode_id, "zh", &serde_json::to_string(&items)?);
                         return Err(err);
                     }
                 }
             }
         }
         done_batches += 1;
-        let _ = db::set_blob(&ctx.db.lock().unwrap(), episode_id, "zh", &serde_json::to_string(&items)?);
+        let _ = db::set_blob(&ctx.db.lock(), episode_id, "zh", &serde_json::to_string(&items)?);
         sink.emit(ProgressEvent::Info {
             stage: "translate".into(),
             message: format!("{done_batches}/{total_batches}"),
@@ -567,7 +567,7 @@ pub async fn translate_episode(
         });
     }
 
-    db::set_blob(&ctx.db.lock().unwrap(), episode_id, "zh", &serde_json::to_string(&items)?)?;
+    db::set_blob(&ctx.db.lock(), episode_id, "zh", &serde_json::to_string(&items)?)?;
     if !keep_old && items.iter().all(|x| x.is_some()) && target == "zh-CN" {
         let model = if engine == "llm" { resolved.as_ref().map(|r| r.provider.model.as_str()).unwrap_or("") } else { "" };
         let _ = ops::share_translation(ctx, episode_id, engine, model).await;
@@ -663,7 +663,7 @@ pub fn summary_prompt(length_secs: Option<f64>, lang_code: &str) -> String {
 // i18n-ignore-end
 
 pub fn load_episode_zh(ctx: &CoreCtx, episode_id: &str) -> Option<Vec<Option<String>>> {
-    db::get_blob(&ctx.db.lock().unwrap(), episode_id, "zh")
+    db::get_blob(&ctx.db.lock(), episode_id, "zh")
         .ok()
         .flatten()
         .and_then(|s| serde_json::from_str(&s).ok())
@@ -680,9 +680,9 @@ pub async fn generate_guide(
     sink: &dyn ProgressSink,
 ) -> Result<(String, String)> {
     if !regenerate {
-        if let Some(cached) = db::get_blob(&ctx.db.lock().unwrap(), episode_id, "summary")? {
+        if let Some(cached) = db::get_blob(&ctx.db.lock(), episode_id, "summary")? {
             if !cached.trim().is_empty() {
-                let from = db::get_blob(&ctx.db.lock().unwrap(), episode_id, "summary-from")?.unwrap_or_default();
+                let from = db::get_blob(&ctx.db.lock(), episode_id, "summary-from")?.unwrap_or_default();
                 return Ok((cached, if from.is_empty() { "cached".into() } else { from }));
             }
         }
@@ -692,8 +692,8 @@ pub async fn generate_guide(
             }
         }
     }
-    let ep = db::get_episode(&ctx.db.lock().unwrap(), episode_id)?.ok_or_else(|| anyhow!("节目不存在"))?;
-    let t = db::get_transcript(&ctx.db.lock().unwrap(), episode_id)?.ok_or_else(|| anyhow!("没有字幕"))?;
+    let ep = db::get_episode(&ctx.db.lock(), episode_id)?.ok_or_else(|| anyhow!("节目不存在"))?;
+    let t = db::get_transcript(&ctx.db.lock(), episode_id)?.ok_or_else(|| anyhow!("没有字幕"))?;
     let resolved = settings::resolve_chat_provider(ctx, provider_override, model_override)?;
     if !settings::provider_ready(&resolved) {
         return Err(anyhow!("请先在设置里连接 AI 模型"));
@@ -719,7 +719,7 @@ pub async fn generate_guide(
     )
     .await?;
     {
-        let conn = ctx.db.lock().unwrap();
+        let conn = ctx.db.lock();
         db::set_blob(&conn, episode_id, "summary", &answer)?;
         let _ = db::set_blob(&conn, episode_id, "summary-from", "");
     }
@@ -739,8 +739,8 @@ pub async fn ask_episode(
     save_history: bool,
     sink: &dyn ProgressSink,
 ) -> Result<(String, Vec<ChatTurn>)> {
-    let ep = db::get_episode(&ctx.db.lock().unwrap(), episode_id)?.ok_or_else(|| anyhow!("节目不存在"))?;
-    let t = db::get_transcript(&ctx.db.lock().unwrap(), episode_id)?.ok_or_else(|| anyhow!("没有字幕"))?;
+    let ep = db::get_episode(&ctx.db.lock(), episode_id)?.ok_or_else(|| anyhow!("节目不存在"))?;
+    let t = db::get_transcript(&ctx.db.lock(), episode_id)?.ok_or_else(|| anyhow!("没有字幕"))?;
     let resolved = settings::resolve_chat_provider(ctx, provider_override, model_override)?;
     if !settings::provider_ready(&resolved) {
         return Err(anyhow!("请先在设置里连接 AI 模型"));
@@ -761,7 +761,7 @@ pub async fn ask_episode(
     let mut history: Vec<ChatTurn> = if reset_history {
         vec![]
     } else {
-        db::get_blob(&ctx.db.lock().unwrap(), episode_id, "chat")?
+        db::get_blob(&ctx.db.lock(), episode_id, "chat")?
             .and_then(|s| serde_json::from_str(&s).ok())
             .unwrap_or_default()
     };
@@ -778,7 +778,7 @@ pub async fn ask_episode(
         model: Some(resolved.provider.model),
     });
     if save_history {
-        db::set_blob(&ctx.db.lock().unwrap(), episode_id, "chat", &serde_json::to_string(&history)?)?;
+        db::set_blob(&ctx.db.lock(), episode_id, "chat", &serde_json::to_string(&history)?)?;
     }
     Ok((answer, history))
 }
@@ -793,7 +793,7 @@ pub async fn generate_portrait(
 ) -> Result<String> {
     let key = format!("portrait-{range}");
     if !regenerate {
-        if let Some(cached) = db::get_blob(&ctx.db.lock().unwrap(), "stats", &key)? {
+        if let Some(cached) = db::get_blob(&ctx.db.lock(), "stats", &key)? {
             if !cached.trim().is_empty() {
                 return Ok(cached);
             }
@@ -811,7 +811,7 @@ pub async fn generate_portrait(
     let since = days
         .map(|d| (chrono::Local::now() - chrono::Duration::days(d - 1)).format("%Y-%m-%d").to_string())
         .unwrap_or_else(|| "1970-01-01".into());
-    let rows = db::listens_since(&ctx.db.lock().unwrap(), &since)?;
+    let rows = db::listens_since(&ctx.db.lock(), &since)?;
     let mut shows: HashMap<String, f64> = HashMap::new();
     let mut titles: HashMap<String, f64> = HashMap::new();
     let mut hours = [0.0f64; 24];
@@ -863,7 +863,7 @@ pub async fn generate_portrait(
     if out.trim().is_empty() {
         return Err(anyhow!("模型没有返回内容，请重试或换一个模型"));
     }
-    db::set_blob(&ctx.db.lock().unwrap(), "stats", &key, &out)?;
+    db::set_blob(&ctx.db.lock(), "stats", &key, &out)?;
     Ok(out)
 }
 

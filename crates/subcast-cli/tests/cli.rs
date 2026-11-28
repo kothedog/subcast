@@ -75,7 +75,7 @@ fn seed_library(dir: &Path) {
         link: Some("https://example.com/ep1".into()),
         ..Default::default()
     };
-    let mut conn = ctx.db.lock().unwrap();
+    let mut conn = ctx.db.lock();
     db::upsert_show(&conn, &show).unwrap();
     db::upsert_episodes(&mut conn, &[ep.clone()]).unwrap();
     let tr = Transcript {

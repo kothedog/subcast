@@ -61,9 +61,22 @@ if [ "$SKIP_MAC" = 0 ]; then
     ARCH=$([ "$TARGET" = aarch64-apple-darwin ] && echo aarch64 || echo x64)
     rustup target add "$TARGET" >/dev/null
     echo "==> building $TARGET"
+    # Line tables in a separate dSYM: the shipped binary stays stripped, and crash reports can be symbolicated
+    # later (`atos -o <dSYM>/Contents/Resources/DWARF/subcast-* -arch arm64 -l <load address> <addresses>`).
+    # Env vars, not Cargo.toml: profiles can't be per-target, and CI's Windows/Linux builds don't need it.
+    export CARGO_PROFILE_RELEASE_DEBUG=line-tables-only CARGO_PROFILE_RELEASE_SPLIT_DEBUGINFO=packed
     APPLE_SIGNING_IDENTITY="$IDENTITY" npm run tauri build -- --target "$TARGET" --bundles app
     APP="src-tauri/target/$TARGET/release/bundle/macos/SubCast.app"
     cargo build --release --target "$TARGET" -p subcast-cli
+    unset CARGO_PROFILE_RELEASE_DEBUG CARGO_PROFILE_RELEASE_SPLIT_DEBUGINFO
+    # Keep the dSYMs (local only, release/ is gitignored). The UUIDs must match the shipped binaries.
+    DSYM_DIR="release/dsym/$VERSION/$ARCH"
+    rm -rf "$DSYM_DIR" && mkdir -p "$DSYM_DIR"
+    for BIN in subcast subcast-cli; do
+      cp -RL "src-tauri/target/$TARGET/release/$BIN.dSYM" "$DSYM_DIR/" # -L: cargo links it into deps/
+      [ "$(dwarfdump --uuid "$DSYM_DIR/$BIN.dSYM" | awk '{print $2}')" = "$(dwarfdump --uuid "src-tauri/target/$TARGET/release/$BIN" | awk '{print $2}')" ] \
+        || { echo "dSYM UUID mismatch for $BIN ($ARCH)" >&2; exit 1; }
+    done
     cp "src-tauri/target/$TARGET/release/subcast-cli" "$APP/Contents/MacOS/subcast-cli"
     codesign --force --options runtime --timestamp --entitlements src-tauri/Entitlements.plist --sign "$IDENTITY" "$APP/Contents/MacOS/subcast-cli"
     codesign --force --options runtime --timestamp --entitlements src-tauri/Entitlements.plist --sign "$IDENTITY" "$APP"

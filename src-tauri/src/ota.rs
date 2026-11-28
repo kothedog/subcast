@@ -18,7 +18,8 @@ use anyhow::{anyhow, Context, Result};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, RwLock};
+use parking_lot::RwLock;
+use std::sync::Arc;
 
 const MANIFEST_URL: &str = "https://subcast.qiaomu.ai/tools/ui/manifest.json";
 /// SUBCAST_UI_MANIFEST points a test build at another manifest.
@@ -105,7 +106,7 @@ pub fn give_up(data: &Path, active: &Active) -> bool {
     let Some(b) = st.booting.take() else { return false };
     if !st.failed.contains(&b) { st.failed.push(b); }
     let _ = save(data, &st);
-    *active.write().unwrap() = st.committed.filter(|c| usable(data, *c)).map(|c| dir(data, c));
+    *active.write() = st.committed.filter(|c| usable(data, *c)).map(|c| dir(data, c));
     true
 }
 
@@ -196,7 +197,7 @@ pub async fn check(data: &Path, pubkey: &str) -> Result<Outcome> {
 
 /// A file of the active bundle, or None to fall back to the interface built into the app.
 pub fn read(active: &Active, path: &str) -> Option<Option<(Vec<u8>, &'static str)>> {
-    let base = active.read().unwrap().clone()?;
+    let base = active.read().clone()?;
     let rel = path.trim_start_matches('/');
     let rel = if rel.is_empty() { "index.html" } else { rel };
     if rel.split('/').any(|p| p == ".." || p.contains('\\')) { return Some(None); }
@@ -245,9 +246,9 @@ mod tests {
         put(&d, 3);
         let mut st = load(&d); st.staged = Some(3); save(&d, &st).unwrap();
         let active: Active = Arc::new(RwLock::new(boot(&d)));
-        assert_eq!(*active.read().unwrap(), Some(dir(&d, 3)));
+        assert_eq!(*active.read(), Some(dir(&d, 3)));
         assert!(give_up(&d, &active));
-        assert_eq!(*active.read().unwrap(), Some(dir(&d, 1)));
+        assert_eq!(*active.read(), Some(dir(&d, 1)));
         // A bundle that reports ready becomes the good one; older folders go.
         put(&d, 4);
         let mut st = load(&d); st.staged = Some(4); save(&d, &st).unwrap();

@@ -12,7 +12,7 @@ import { buildPlatformPost, polishClipCopy, saveClipCopy, type HighlightClip, ty
 import { kbd, t, tk, tr, tx, useLang } from "../lib/i18n";
 import { llmReady, useJobs } from "../lib/jobs";
 import { showName } from "../lib/picks";
-import { aiLineBreaks, textsToBreak } from "../lib/clipLines";
+import { aiLineBreaks, aiPairBreaks, pairsToBreak, textsToBreak, type PairLines } from "../lib/clipLines";
 import { buildClipCues, canvasToPngBase64, clipGeometry, fromOldLayout, renderCueBand, renderStaticOverlay, type CardBg, type CardCrop, type ClipAspect, type ClipFit, type ClipLayout, type ClipVisualConfig, type SubStyleId } from "../lib/videoClipCanvas";
 import { type CoverFontId } from "../lib/webfonts";
 import { renderCoverCanvas, subjectCenterX, type CoverAspect, type CoverTemplateId } from "../lib/videoCoverCanvas";
@@ -394,23 +394,27 @@ function VideoClipDialogBody({ target }: { target: ClipModalTarget }) {
   }, [prepared?.frames, prepared?.bestFrame]); // eslint-disable-line react-hooks/exhaustive-deps
   const maxCjk = geo.W > geo.H ? 18 : 14;
   const [lineBreaks, setLineBreaks] = useState<Record<number, string[]>>({});
-  useEffect(() => { setLineBreaks({}); }, [maxCjk, subLang]);
+  const [pairBreaks, setPairBreaks] = useState<Record<number, PairLines>>({});
+  useEffect(() => { setLineBreaks({}); setPairBreaks({}); }, [maxCjk, subLang]);
   useEffect(() => {
     if (!addSubs) return;
-    const texts = parts.flatMap((p) => textsToBreak(effectiveSegments, effectiveZh, p.startIdx, p.endIdx, subLang)).filter((x) => !lineBreaks[x.i]);
-    if (!texts.length) return;
     const ctl = new AbortController();
+    // Bilingual cues split both languages together; one language alone splits only its CJK text.
+    const pairs = subLang === "bilingual" ? parts.flatMap((p) => pairsToBreak(effectiveSegments, effectiveZh, p.startIdx, p.endIdx)).filter((x) => !pairBreaks[x.i]) : [];
+    const texts = subLang === "bilingual" ? [] : parts.flatMap((p) => textsToBreak(effectiveSegments, effectiveZh, p.startIdx, p.endIdx, subLang)).filter((x) => !lineBreaks[x.i]);
+    if (!pairs.length && !texts.length) return;
     const timer = window.setTimeout(() => {
-      void aiLineBreaks(texts, maxCjk, ctl.signal).then((r) => { if (!ctl.signal.aborted && Object.keys(r).length) setLineBreaks((p) => ({ ...p, ...r })); }).catch(() => {});
+      if (pairs.length) void aiPairBreaks(pairs, maxCjk, ctl.signal).then((r) => { if (!ctl.signal.aborted && Object.keys(r).length) setPairBreaks((p) => ({ ...p, ...r })); }).catch(() => {});
+      if (texts.length) void aiLineBreaks(texts, maxCjk, ctl.signal).then((r) => { if (!ctl.signal.aborted && Object.keys(r).length) setLineBreaks((p) => ({ ...p, ...r })); }).catch(() => {});
     }, 400);
     return () => { window.clearTimeout(timer); ctl.abort(); };
   }, [addSubs, rangesKey, subLang, maxCjk, effectiveSegments, effectiveZh]); // eslint-disable-line react-hooks/exhaustive-deps
   // Every part's cues, moved to where that part plays in the clip.
-  const buildAllCues = () => parts.flatMap((p) => buildClipCues(effectiveSegments, effectiveZh, p.startIdx, p.endIdx, p.a, p.b, subLang, lineBreaks, maxCjk)
+  const buildAllCues = () => parts.flatMap((p) => buildClipCues(effectiveSegments, effectiveZh, p.startIdx, p.endIdx, p.a, p.b, subLang, lineBreaks, maxCjk, pairBreaks)
     .map((c) => ({ ...c, start: c.start + p.offset, end: c.end + p.offset })));
   const cues = useMemo(
     () => (addSubs ? buildAllCues() : []),
-    [addSubs, effectiveSegments, effectiveZh, rangesKey, subLang, lineBreaks, maxCjk], // eslint-disable-line react-hooks/exhaustive-deps
+    [addSubs, effectiveSegments, effectiveZh, rangesKey, subLang, lineBreaks, pairBreaks, maxCjk], // eslint-disable-line react-hooks/exhaustive-deps
   );
 
   const visualConfig: ClipVisualConfig = useMemo(() => ({
@@ -722,7 +726,7 @@ function VideoClipDialogBody({ target }: { target: ClipModalTarget }) {
       const staticOverlayPng = staticCanvas ? canvasToPngBase64(staticCanvas) : null;
       // Decided again from what preparing found: an export started before any preview still skips doubled subtitles.
       const exportCues = subsOn
-        ? parts.flatMap((p) => buildClipCues(effectiveSegments, exportZh, p.startIdx, p.endIdx, p.a, p.b, subLang, lineBreaks, maxCjk)
+        ? parts.flatMap((p) => buildClipCues(effectiveSegments, exportZh, p.startIdx, p.endIdx, p.a, p.b, subLang, lineBreaks, maxCjk, pairBreaks)
             .map((c) => ({ ...c, start: c.start + p.offset, end: c.end + p.offset })))
         : [];
       // The fetched picture's real size decides the layout (an export can start before any preview).

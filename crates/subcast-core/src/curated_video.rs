@@ -10,7 +10,7 @@ use once_cell::sync::Lazy;
 use regex::Regex;
 use serde_json::Value;
 use std::collections::HashMap;
-use std::sync::RwLock;
+use parking_lot::RwLock;
 use std::time::{Duration, Instant};
 
 #[derive(Clone, Debug)]
@@ -42,7 +42,7 @@ fn builtin(source: &str) -> Option<&'static str> {
 
 /// Whether a curated source is explicitly marked as audio-only (no YouTube video version).
 pub fn is_audio_only(source: &str) -> bool {
-    if let Some(o) = OVERRIDES.read().unwrap().get(source) {
+    if let Some(o) = OVERRIDES.read().get(source) {
         return o.eq_ignore_ascii_case("none");
     }
     builtin(source).is_some_and(|b| b.eq_ignore_ascii_case("none"))
@@ -65,7 +65,7 @@ fn load_saved() -> HashMap<String, (Option<String>, Instant)> {
 }
 
 fn save_found() {
-    let map: HashMap<String, String> = FOUND.read().unwrap().iter().filter_map(|(k, (v, _))| v.clone().map(|v| (k.clone(), v))).collect();
+    let map: HashMap<String, String> = FOUND.read().iter().filter_map(|(k, (v, _))| v.clone().map(|v| (k.clone(), v))).collect();
     if let Some(p) = saved_path() {
         if let Some(d) = p.parent() { let _ = std::fs::create_dir_all(d); }
         let _ = std::fs::write(p, serde_json::to_string_pretty(&map).unwrap_or_default());
@@ -78,7 +78,7 @@ fn load_aspect() -> HashMap<String, bool> {
 }
 
 fn save_aspect() {
-    let map = ASPECT.read().unwrap().clone();
+    let map = ASPECT.read().clone();
     if let Some(p) = aspect_path() {
         if let Some(d) = p.parent() { let _ = std::fs::create_dir_all(d); }
         let _ = std::fs::write(p, serde_json::to_string(&map).unwrap_or_default());
@@ -89,7 +89,7 @@ fn save_aspect() {
 pub fn set_overrides(v: &Value) {
     let Some(m) = v.as_object() else { return };
     let map = m.iter().filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.trim().to_string()))).collect();
-    *OVERRIDES.write().unwrap() = map;
+    *OVERRIDES.write() = map;
 }
 
 /// Gives real 16:9 videos to the episodes that have none, filtering out 1:1 RSS-synced static-cover uploads
@@ -268,17 +268,17 @@ fn find_twin_video(
 
 /// The show's channel id (UC…), from the overrides, this session's search, or a new search.
 async fn channel_for(source: &str, show_name: &str, eps: &[Episode]) -> Option<String> {
-    if let Some(o) = OVERRIDES.read().unwrap().get(source).cloned() {
+    if let Some(o) = OVERRIDES.read().get(source).cloned() {
         return channel_id_of(&o);
     }
     if let Some(b) = builtin(source) { return channel_id_of(b); }
-    if let Some((found, at)) = FOUND.read().unwrap().get(source).cloned() {
+    if let Some((found, at)) = FOUND.read().get(source).cloned() {
         // A failed search is tried again before long: YouTube's search page is not always the same.
         if found.is_some() || at.elapsed() < Duration::from_secs(30 * 60) { return found; }
     }
     let mut found = discover(show_name, eps).await;
     if found.is_none() { found = discover(show_name, eps).await; }
-    FOUND.write().unwrap().insert(source.to_string(), (found.clone(), Instant::now()));
+    FOUND.write().insert(source.to_string(), (found.clone(), Instant::now()));
     if found.is_some() { save_found(); }
     found
 }
@@ -341,7 +341,7 @@ async fn check_widescreen_batch(ids: &[String]) -> HashMap<String, bool> {
     let mut result = HashMap::new();
     let mut missing = Vec::new();
     {
-        let cache = ASPECT.read().unwrap();
+        let cache = ASPECT.read();
         let mut seen = std::collections::HashSet::new();
         for id in ids {
             if !seen.insert(id.as_str()) { continue; }
@@ -363,7 +363,7 @@ async fn check_widescreen_batch(ids: &[String]) -> HashMap<String, bool> {
     })).await;
     let mut updated = false;
     {
-        let mut cache = ASPECT.write().unwrap();
+        let mut cache = ASPECT.write();
         for (id, w) in checked.into_iter().flatten() {
             cache.insert(id.clone(), w);
             result.insert(id, w);
@@ -378,7 +378,7 @@ async fn check_widescreen_batch(ids: &[String]) -> HashMap<String, bool> {
 pub async fn channel_videos(channel: &str) -> Vec<Vid> {
     if !(channel.starts_with("UC") && channel.len() == 24) { return vec![]; }
     static CACHE: Lazy<RwLock<HashMap<String, (Vec<Vid>, Instant)>>> = Lazy::new(|| RwLock::new(HashMap::new()));
-    if let Some((v, at)) = CACHE.read().unwrap().get(channel) { if at.elapsed() < Duration::from_secs(30 * 60) { return v.clone(); } }
+    if let Some((v, at)) = CACHE.read().get(channel) { if at.elapsed() < Duration::from_secs(30 * 60) { return v.clone(); } }
     let (feed, page) = tokio::join!(feed_videos(channel), uploads_page(channel));
     let mut out = feed;
     for v in page {
@@ -387,7 +387,7 @@ pub async fn channel_videos(channel: &str) -> Vec<Vid> {
             None => out.push(v),
         }
     }
-    if !out.is_empty() { CACHE.write().unwrap().insert(channel.to_string(), (out.clone(), Instant::now())); }
+    if !out.is_empty() { CACHE.write().insert(channel.to_string(), (out.clone(), Instant::now())); }
     out
 }
 

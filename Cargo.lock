@@ -4874,7 +4874,7 @@ checksum = "7da8b5736845d9f2fcb837ea5d9e2628564b3b043a70948a3f0b778838c5fb4f"
 
 [[package]]
 name = "subcast"
-version = "0.3.8"
+version = "0.3.11"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -4885,6 +4885,7 @@ dependencies = [
  "hex",
  "libc",
  "minisign-verify",
+ "parking_lot",
  "rusqlite",
  "serde",
  "serde_json",
@@ -4912,6 +4913,7 @@ dependencies = [
  "clap",
  "clap_complete",
  "dirs 5.0.1",
+ "parking_lot",
  "serde",
  "serde_json",
  "subcast-core",
@@ -4936,6 +4938,7 @@ dependencies = [
  "image",
  "keyring",
  "once_cell",
+ "parking_lot",
  "qrcode",
  "regex",
  "reqwest 0.12.28",

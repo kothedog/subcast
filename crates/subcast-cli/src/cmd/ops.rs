@@ -377,7 +377,7 @@ pub fn run_storage(ctx: &CoreCtx, args: StorageArgs, out: Out) -> Result<(), Cli
 pub fn run_doctor(ctx: &CoreCtx, _args: DoctorArgs, out: Out) -> Result<(), CliError> {
     let db_path = ctx.data.join("subcast.db");
     let (shows_count, ep_count) = {
-        let conn = ctx.db.lock().unwrap();
+        let conn = ctx.db.lock();
         let sc: i64 = db::list_shows(&conn).map(|v| v.len() as i64).unwrap_or(0);
         let ec: i64 = conn.query_row("SELECT COUNT(*) FROM episodes", [], |r| r.get(0)).unwrap_or(0);
         (sc, ec)

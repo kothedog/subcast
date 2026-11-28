@@ -8,7 +8,7 @@ import { join, relative } from "node:path";
 const root = new URL("..", import.meta.url).pathname;
 const CJK = /[\u3400-\u9fff]/;
 const walk = (dir) => (existsSync(dir) ? readdirSync(dir).flatMap((f) => { const p = join(dir, f); return statSync(p).isDirectory() ? walk(p) : [p]; }) : []);
-const front = walk(join(root, "src")).filter((f) => /\.(tsx?)$/.test(f) && !f.includes("/locales/"));
+const front = walk(join(root, "src")).filter((f) => /\.(tsx?)$/.test(f) && !/\.test\.ts$/.test(f) && !f.includes("/locales/"));
 const unescape = (s) => s.replace(/\\n/g, "\n").replace(/\\"/g, '"').replace(/\\`/g, "`").replace(/\\\\/g, "\\");
 
 const keys = new Map(); // key -> where

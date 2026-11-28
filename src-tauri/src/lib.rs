@@ -3,6 +3,8 @@ mod appupdate;
 mod ota;
 mod ytlogin;
 mod clipath;
+mod guard;
+mod panic_log;
 
 pub use subcast_core::net;
 use serde::Serialize;
@@ -90,12 +92,16 @@ impl ProgressSink for TauriSink {
 
 #[tauri::command]
 async fn youtube_channel_feed(state: State<'_, AppState>, video_id: String) -> Res<String> {
-    ops::youtube_channel_feed(&state.ctx, &video_id).await.map_err(e)
+    guard::guarded(async move {
+        ops::youtube_channel_feed(&state.ctx, &video_id).await.map_err(e)
+    }).await
 }
 
 #[tauri::command]
 async fn add_subscription(state: State<'_, AppState>, input: String) -> Res<ops::Added> {
-    ops::add_subscription(&state.ctx, &input).await.map_err(e)
+    guard::guarded(async move {
+        ops::add_subscription(&state.ctx, &input).await.map_err(e)
+    }).await
 }
 
 #[tauri::command(async)]
@@ -105,94 +111,112 @@ fn cached_show(state: State<'_, AppState>, input: String) -> Res<Option<ops::Pre
 
 #[tauri::command]
 async fn preview_show(state: State<'_, AppState>, input: String) -> Res<ops::Preview> {
-    ops::preview_show(&state.ctx, &input).await.map_err(e)
+    guard::guarded(async move {
+        ops::preview_show(&state.ctx, &input).await.map_err(e)
+    }).await
 }
 
 #[tauri::command]
 async fn refresh_show(state: State<'_, AppState>, id: String) -> Res<Show> {
-    ops::refresh_show(&state.ctx, &id).await.map_err(e)
+    guard::guarded(async move {
+        ops::refresh_show(&state.ctx, &id).await.map_err(e)
+    }).await
 }
 
 #[tauri::command]
 async fn refresh_all(state: State<'_, AppState>) -> Res<ops::Refreshed> {
-    ops::refresh_all(&state.ctx).await.map_err(e)
+    guard::guarded(async move {
+        ops::refresh_all(&state.ctx).await.map_err(e)
+    }).await
 }
 
 #[tauri::command(async)]
 fn list_shows(state: State<'_, AppState>) -> Res<Vec<Show>> {
-    db::list_shows(&state.ctx.db.lock().unwrap()).map_err(e)
+    db::list_shows(&state.ctx.db.lock()).map_err(e)
 }
 
 #[tauri::command(async)]
 fn list_episodes(state: State<'_, AppState>, show_id: Option<String>, limit: Option<i64>) -> Res<Vec<Episode>> {
-    db::list_episodes(&state.ctx.db.lock().unwrap(), show_id.as_deref(), limit.unwrap_or(300)).map_err(e)
+    db::list_episodes(&state.ctx.db.lock(), show_id.as_deref(), limit.unwrap_or(300)).map_err(e)
 }
 
 #[tauri::command]
 async fn search_show(state: State<'_, AppState>, show_id: String, query: String) -> Res<Vec<ops::ShowHit>> {
-    ops::search_show(&state.ctx, &show_id, &query).await.map_err(e)
+    guard::guarded(async move {
+        ops::search_show(&state.ctx, &show_id, &query).await.map_err(e)
+    }).await
 }
 
 #[tauri::command(async)]
 fn recent_episodes(state: State<'_, AppState>) -> Res<Vec<Episode>> {
-    db::recent_episodes(&state.ctx.db.lock().unwrap(), 60).map_err(e)
+    db::recent_episodes(&state.ctx.db.lock(), 60).map_err(e)
 }
 
 #[tauri::command(async)]
 fn get_episode(state: State<'_, AppState>, id: String) -> Res<Option<Episode>> {
-    db::get_episode(&state.ctx.db.lock().unwrap(), &id).map_err(e)
+    db::get_episode(&state.ctx.db.lock(), &id).map_err(e)
 }
 
 #[tauri::command(async)]
 fn remove_show(state: State<'_, AppState>, id: String, keep_episode_id: Option<String>) -> Res<()> {
-    db::delete_show(&state.ctx.db.lock().unwrap(), &id, keep_episode_id.as_deref()).map_err(e)
+    db::delete_show(&state.ctx.db.lock(), &id, keep_episode_id.as_deref()).map_err(e)
 }
 
 #[tauri::command(async)]
 fn set_progress(state: State<'_, AppState>, id: String, seconds: f64) -> Res<()> {
-    db::set_progress(&state.ctx.db.lock().unwrap(), &id, seconds).map_err(e)
+    db::set_progress(&state.ctx.db.lock(), &id, seconds).map_err(e)
 }
 
 #[tauri::command]
 fn set_watched(state: State<'_, AppState>, id: String, watched: Option<String>) -> Res<()> {
-    db::set_watched(&state.ctx.db.lock().unwrap(), &id, watched.as_deref()).map_err(e)
+    db::set_watched(&state.ctx.db.lock(), &id, watched.as_deref()).map_err(e)
 }
 
 #[tauri::command]
 fn mark_show_watched(state: State<'_, AppState>, show_id: String) -> Res<usize> {
-    db::mark_show_watched(&state.ctx.db.lock().unwrap(), &show_id).map_err(e)
+    db::mark_show_watched(&state.ctx.db.lock(), &show_id).map_err(e)
 }
 
 #[tauri::command]
 async fn search_podcasts(term: String, country: Option<String>) -> Res<Vec<feeds::SearchResult>> {
-    feeds::search_podcasts(&term, country.as_deref().unwrap_or("US")).await.map_err(e)
+    guard::guarded(async move {
+        feeds::search_podcasts(&term, country.as_deref().unwrap_or("US")).await.map_err(e)
+    }).await
 }
 
 // ---- transcripts & captions ------------------------------------------------------------------------
 
 #[tauri::command(async)]
 fn load_transcript(state: State<'_, AppState>, episode_id: String) -> Res<Option<Transcript>> {
-    db::get_transcript(&state.ctx.db.lock().unwrap(), &episode_id).map_err(e)
+    db::get_transcript(&state.ctx.db.lock(), &episode_id).map_err(e)
 }
 
 #[tauri::command]
 async fn youtube_tracks(state: State<'_, AppState>, episode_id: String) -> Res<Vec<ops::TrackChoice>> {
-    ops::youtube_tracks(&state.ctx, &episode_id).await.map_err(e)
+    guard::guarded(async move {
+        ops::youtube_tracks(&state.ctx, &episode_id).await.map_err(e)
+    }).await
 }
 
 #[tauri::command]
 async fn use_youtube_track(state: State<'_, AppState>, episode_id: String, language: String, auto: bool) -> Res<Transcript> {
-    ops::use_youtube_track(&state.ctx, &episode_id, &language, auto).await.map_err(e)
+    guard::guarded(async move {
+        ops::use_youtube_track(&state.ctx, &episode_id, &language, auto).await.map_err(e)
+    }).await
 }
 
 #[tauri::command]
 async fn fetch_official_transcript(state: State<'_, AppState>, episode_id: String) -> Res<Option<Transcript>> {
-    ops::fetch_official_transcript(&state.ctx, &episode_id).await.map_err(e)
+    guard::guarded(async move {
+        ops::fetch_official_transcript(&state.ctx, &episode_id).await.map_err(e)
+    }).await
 }
 
 #[tauri::command]
 async fn qiaomu_detail(state: State<'_, AppState>, episode_id: String) -> Res<qiaomu::Detail> {
-    ops::qiaomu_detail(&state.ctx, &episode_id).await.map_err(e)
+    guard::guarded(async move {
+        ops::qiaomu_detail(&state.ctx, &episode_id).await.map_err(e)
+    }).await
 }
 
 // ---- media, clips & export -------------------------------------------------------------------------
@@ -217,15 +241,19 @@ fn save_image(name: String, base64: String) -> Res<String> {
 
 #[tauri::command]
 async fn learn_clip(state: State<'_, AppState>, episode_id: String, start: f64, end: f64) -> Res<String> {
-    ops::learn_clip(&state.ctx, &episode_id, start, end).await.map_err(e)
+    guard::guarded(async move {
+        ops::learn_clip(&state.ctx, &episode_id, start, end).await.map_err(e)
+    }).await
 }
 
 #[tauri::command]
 async fn export_anki(path: String, deck: String, model: String, notes: Vec<anki::Note>) -> Res<usize> {
-    tokio::task::spawn_blocking(move || anki::write(std::path::Path::new(&path), &deck, &model, &notes))
-        .await
-        .map_err(e)?
-        .map_err(e)
+    guard::guarded(async move {
+        tokio::task::spawn_blocking(move || anki::write(std::path::Path::new(&path), &deck, &model, &notes))
+            .await
+            .map_err(e)?
+            .map_err(e)
+    }).await
 }
 
 #[tauri::command]
@@ -263,10 +291,12 @@ async fn video_clip_prepare(
     end: f64,
     ranges: Option<Vec<(f64, f64)>>,
 ) -> Res<videoclip::PreparedClip> {
-    let sink = TauriSink(app);
-    ops::video_clip_prepare(&state.ctx, &job_id, &video_id, start, end, ranges, &sink)
-        .await
-        .map_err(e)
+    guard::guarded(async move {
+        let sink = TauriSink(app);
+        ops::video_clip_prepare(&state.ctx, &job_id, &video_id, start, end, ranges, &sink)
+            .await
+            .map_err(e)
+    }).await
 }
 
 #[tauri::command]
@@ -276,8 +306,10 @@ async fn video_clip_render(
     job_id: String,
     req: videoclip::RenderRequest,
 ) -> Res<videoclip::RenderResult> {
-    let sink = TauriSink(app);
-    ops::video_clip_render(&state.ctx, &job_id, req, &sink).await.map_err(e)
+    guard::guarded(async move {
+        let sink = TauriSink(app);
+        ops::video_clip_render(&state.ctx, &job_id, req, &sink).await.map_err(e)
+    }).await
 }
 
 #[tauri::command]
@@ -291,19 +323,25 @@ fn reveal_file(app: AppHandle, path: String) -> Res<()> {
 
 #[tauri::command]
 async fn list_models(provider: llm::Provider) -> Res<Vec<String>> {
-    cloud::list_models(&provider).await.map_err(e)
+    guard::guarded(async move {
+        cloud::list_models(&provider).await.map_err(e)
+    }).await
 }
 
 #[tauri::command]
 async fn tts_speak(text: String, voice: String, resource: Option<String>) -> Res<String> {
-    use base64::Engine;
-    let wav = cloud::tts(&voice, resource.as_deref().unwrap_or(""), &text).await.map_err(e)?;
-    Ok(base64::engine::general_purpose::STANDARD.encode(wav))
+    guard::guarded(async move {
+        use base64::Engine;
+        let wav = cloud::tts(&voice, resource.as_deref().unwrap_or(""), &text).await.map_err(e)?;
+        Ok(base64::engine::general_purpose::STANDARD.encode(wav))
+    }).await
 }
 
 #[tauri::command]
 async fn tts_synthesize(state: State<'_, AppState>, req: speech::TtsRequest) -> Res<speech::TtsResult> {
-    speech::synthesize(&state.ctx.data, req).await.map_err(e)
+    guard::guarded(async move {
+        speech::synthesize(&state.ctx.data, req).await.map_err(e)
+    }).await
 }
 
 #[tauri::command(async)]
@@ -318,8 +356,10 @@ fn local_tts_status(state: State<'_, AppState>) -> local_tts::Status {
 
 #[tauri::command]
 async fn local_tts_install(app: AppHandle, state: State<'_, AppState>, id: String, mirror_first: bool) -> Res<()> {
-    let sink = TauriSink(app);
-    ops::local_tts_install(&state.ctx, &id, mirror_first, &sink).await.map_err(e)
+    guard::guarded(async move {
+        let sink = TauriSink(app);
+        ops::local_tts_install(&state.ctx, &id, mirror_first, &sink).await.map_err(e)
+    }).await
 }
 
 #[tauri::command(async)]
@@ -381,16 +421,18 @@ struct NetworkReport {
 
 #[tauri::command]
 async fn network_check(state: State<'_, AppState>) -> Res<NetworkReport> {
-    let checks = subcast_core::netcheck::run(&state.ctx.data).await;
-    let applied = webview_proxy();
-    let webview_proxy = match parse_webview_proxy(&subcast_core::net::proxy()) {
-        Ok(now) if applied.as_ref() == Some(&now) => "subcast",
-        Ok(_) => "restart",
-        Err("none") if applied.is_some() => "restart",
-        Err("none") => "system",
-        Err(why) => why,
-    };
-    Ok(NetworkReport { checks, webview_proxy })
+    guard::guarded(async move {
+        let checks = subcast_core::netcheck::run(&state.ctx.data).await;
+        let applied = webview_proxy();
+        let webview_proxy = match parse_webview_proxy(&subcast_core::net::proxy()) {
+            Ok(now) if applied.as_ref() == Some(&now) => "subcast",
+            Ok(_) => "restart",
+            Err("none") if applied.is_some() => "restart",
+            Err("none") => "system",
+            Err(why) => why,
+        };
+        Ok(NetworkReport { checks, webview_proxy })
+    }).await
 }
 
 #[cfg(target_os = "macos")]
@@ -457,35 +499,39 @@ fn ui_ready(state: State<'_, AppState>) -> UiInfo {
 
 #[tauri::command]
 async fn refresh_config(app: AppHandle, state: State<'_, AppState>) -> Res<()> {
-    let pubkey = app
-        .config()
-        .plugins
-        .0
-        .get("updater")
-        .and_then(|u| u["pubkey"].as_str())
-        .ok_or("缺少更新公钥")?
-        .to_string();
-    ops::refresh_config_with(&state.ctx, &pubkey, |pk, body, sig| ota::verify(pk, body, sig))
-        .await
-        .map(|_| ())
-        .map_err(e)
+    guard::guarded(async move {
+        let pubkey = app
+            .config()
+            .plugins
+            .0
+            .get("updater")
+            .and_then(|u| u["pubkey"].as_str())
+            .ok_or("缺少更新公钥")?
+            .to_string();
+        ops::refresh_config_with(&state.ctx, &pubkey, |pk, body, sig| ota::verify(pk, body, sig))
+            .await
+            .map(|_| ())
+            .map_err(e)
+    }).await
 }
 
 #[tauri::command]
 async fn ui_check(app: AppHandle, state: State<'_, AppState>) -> Res<String> {
-    let pubkey = app
-        .config()
-        .plugins
-        .0
-        .get("updater")
-        .and_then(|u| u["pubkey"].as_str())
-        .ok_or("缺少更新公钥")?
-        .to_string();
-    Ok(match ota::check(&state.ctx.data, &pubkey).await.map_err(e)? {
-        ota::Outcome::None => "none".into(),
-        ota::Outcome::Staged(b) => format!("staged:{b}"),
-        ota::Outcome::RolledBack => "rollback".into(),
-    })
+    guard::guarded(async move {
+        let pubkey = app
+            .config()
+            .plugins
+            .0
+            .get("updater")
+            .and_then(|u| u["pubkey"].as_str())
+            .ok_or("缺少更新公钥")?
+            .to_string();
+        Ok(match ota::check(&state.ctx.data, &pubkey).await.map_err(e)? {
+            ota::Outcome::None => "none".into(),
+            ota::Outcome::Staged(b) => format!("staged:{b}"),
+            ota::Outcome::RolledBack => "rollback".into(),
+        })
+    }).await
 }
 
 #[tauri::command]
@@ -496,40 +542,52 @@ async fn youtube_stream(
     mode: Option<String>,
     fresh: Option<bool>,
 ) -> Res<ops::VideoStream> {
-    let sink = TauriSink(app);
-    ops::youtube_stream(&state.ctx, &video_id, mode.as_deref(), fresh.unwrap_or(false), &sink)
-        .await
-        .map_err(e)
+    guard::guarded(async move {
+        let sink = TauriSink(app);
+        ops::youtube_stream(&state.ctx, &video_id, mode.as_deref(), fresh.unwrap_or(false), &sink)
+            .await
+            .map_err(e)
+    }).await
 }
 
 // Async on purpose: a window built inside a synchronous command deadlocks on Windows (WebView2 needs the main
 // thread the command is blocking), leaving a black, frozen sign-in window.
 #[tauri::command]
 async fn youtube_sign_in(app: AppHandle) -> Res<()> {
-    ytlogin::open(&app).map_err(e)
+    guard::guarded(async move {
+        ytlogin::open(&app).map_err(e)
+    }).await
 }
 
 #[tauri::command]
 async fn youtube_signed_in() -> Res<bool> {
-    Ok(ytlogin::signed_in().await)
+    guard::guarded(async move {
+        Ok(ytlogin::signed_in().await)
+    }).await
 }
 
 #[tauri::command]
 async fn youtube_sign_out() -> Res<()> {
-    ytlogin::sign_out().await.map_err(e)
+    guard::guarded(async move {
+        ytlogin::sign_out().await.map_err(e)
+    }).await
 }
 
 #[tauri::command]
 async fn prepare_youtube(state: State<'_, AppState>) -> Res<()> {
-    ops::prepare_youtube(&state.ctx).await.map_err(e)
+    guard::guarded(async move {
+        ops::prepare_youtube(&state.ctx).await.map_err(e)
+    }).await
 }
 
 // ---- offline & storage -----------------------------------------------------------------------------
 
 #[tauri::command]
 async fn download_episode(app: AppHandle, state: State<'_, AppState>, episode_id: String) -> Res<offline::Saved> {
-    let sink = TauriSink(app);
-    ops::download_episode(&state.ctx, &episode_id, &sink).await.map_err(e)
+    guard::guarded(async move {
+        let sink = TauriSink(app);
+        ops::download_episode(&state.ctx, &episode_id, &sink).await.map_err(e)
+    }).await
 }
 
 #[tauri::command(async)]
@@ -549,7 +607,9 @@ fn clear_downloads(state: State<'_, AppState>) -> Res<()> {
 
 #[tauri::command]
 async fn full_notes(state: State<'_, AppState>, episode_id: String) -> Res<Option<String>> {
-    ops::full_notes(&state.ctx, &episode_id).await.map_err(e)
+    guard::guarded(async move {
+        ops::full_notes(&state.ctx, &episode_id).await.map_err(e)
+    }).await
 }
 
 #[tauri::command(async)]
@@ -593,10 +653,12 @@ async fn align_audio(
     force: bool,
     model: Option<String>,
 ) -> Res<ops::Aligned> {
-    let sink = TauriSink(app);
-    ops::align_audio(&state.ctx, &episode_id, force, model.as_deref(), &sink)
-        .await
-        .map_err(e)
+    guard::guarded(async move {
+        let sink = TauriSink(app);
+        ops::align_audio(&state.ctx, &episode_id, force, model.as_deref(), &sink)
+            .await
+            .map_err(e)
+    }).await
 }
 
 #[tauri::command]
@@ -624,7 +686,9 @@ fn shadow_ready(state: State<'_, AppState>, model: String) -> bool {
 
 #[tauri::command]
 async fn shadow_hear(state: State<'_, AppState>, model: String, language: String) -> Res<String> {
-    shadow::hear(&state.ctx.data, &model, &language).await.map_err(e)
+    guard::guarded(async move {
+        shadow::hear(&state.ctx.data, &model, &language).await.map_err(e)
+    }).await
 }
 
 #[tauri::command]
@@ -634,14 +698,16 @@ fn open_mic_settings() {
 
 #[tauri::command]
 fn save_time_map(state: State<'_, AppState>, episode_id: String, map: align::TimeMap) -> Res<()> {
-    db::set_blob(&state.ctx.db.lock().unwrap(), &episode_id, "tmap", &serde_json::to_string(&map).map_err(e)?)
+    db::set_blob(&state.ctx.db.lock(), &episode_id, "tmap", &serde_json::to_string(&map).map_err(e)?)
         .map_err(e)
 }
 
 /// A loopback address for an episode's audio, for when the web view can't load the original (see hlsproxy).
 #[tauri::command]
 async fn audio_stream(url: String) -> Res<String> {
-    subcast_core::hlsproxy::audio(&url).await.map_err(e)
+    guard::guarded(async move {
+        subcast_core::hlsproxy::audio(&url).await.map_err(e)
+    }).await
 }
 
 #[tauri::command]
@@ -656,12 +722,16 @@ fn clear_audio_cache(state: State<'_, AppState>) -> Res<()> {
 
 #[tauri::command]
 async fn shared_transcript(state: State<'_, AppState>, episode_id: String) -> Res<Option<Transcript>> {
-    ops::shared_transcript(&state.ctx, &episode_id).await.map_err(e)
+    guard::guarded(async move {
+        ops::shared_transcript(&state.ctx, &episode_id).await.map_err(e)
+    }).await
 }
 
 #[tauri::command]
 async fn shared_exists(state: State<'_, AppState>, episode_ids: Vec<String>) -> Res<Vec<String>> {
-    ops::shared_exists(&state.ctx, &episode_ids).await.map_err(e)
+    guard::guarded(async move {
+        ops::shared_exists(&state.ctx, &episode_ids).await.map_err(e)
+    }).await
 }
 
 #[tauri::command]
@@ -673,25 +743,33 @@ async fn transcribe(
     language: String,
     cloud: Option<cloud::CloudAsr>,
 ) -> Res<Transcript> {
-    let sink: Arc<dyn ProgressSink> = Arc::new(TauriSink(app));
-    ops::transcribe(&state.ctx, &episode_id, &model, &language, cloud, false, false, sink)
-        .await
-        .map_err(e)
+    guard::guarded(async move {
+        let sink: Arc<dyn ProgressSink> = Arc::new(TauriSink(app));
+        ops::transcribe(&state.ctx, &episode_id, &model, &language, cloud, false, false, sink)
+            .await
+            .map_err(e)
+    }).await
 }
 
 #[tauri::command]
 async fn share_translation(state: State<'_, AppState>, episode_id: String, engine: String, model: String) -> Res<String> {
-    ops::share_translation(&state.ctx, &episode_id, &engine, &model).await.map_err(e)
+    guard::guarded(async move {
+        ops::share_translation(&state.ctx, &episode_id, &engine, &model).await.map_err(e)
+    }).await
 }
 
 #[tauri::command]
 async fn shared_guide(state: State<'_, AppState>, episode_id: String) -> Res<Option<String>> {
-    ops::shared_guide(&state.ctx, &episode_id).await.map_err(e)
+    guard::guarded(async move {
+        ops::shared_guide(&state.ctx, &episode_id).await.map_err(e)
+    }).await
 }
 
 #[tauri::command]
 async fn share_guide(state: State<'_, AppState>, episode_id: String, text: String, model: String) -> Res<String> {
-    ops::share_guide(&state.ctx, &episode_id, &text, &model).await.map_err(e)
+    guard::guarded(async move {
+        ops::share_guide(&state.ctx, &episode_id, &text, &model).await.map_err(e)
+    }).await
 }
 
 #[tauri::command]
@@ -701,24 +779,28 @@ fn cancel_job(state: State<'_, AppState>, id: String) {
 
 #[tauri::command]
 async fn asr_models(state: State<'_, AppState>) -> Res<Vec<asr::ModelInfo>> {
-    let data = state.ctx.data.clone();
-    tokio::task::spawn_blocking(move || asr::list_models(&data)).await.map_err(e)
+    guard::guarded(async move {
+        let data = state.ctx.data.clone();
+        tokio::task::spawn_blocking(move || asr::list_models(&data)).await.map_err(e)
+    }).await
 }
 
 #[tauri::command]
 async fn download_model(app: AppHandle, state: State<'_, AppState>, id: String, mirror_first: bool) -> Res<()> {
-    let sink = TauriSink(app);
-    ops::download_model(&state.ctx, &id, mirror_first, &sink).await.map_err(e)
+    guard::guarded(async move {
+        let sink = TauriSink(app);
+        ops::download_model(&state.ctx, &id, mirror_first, &sink).await.map_err(e)
+    }).await
 }
 
 #[tauri::command(async)]
 fn log_listen(state: State<'_, AppState>, episode_id: String, show_id: String, seconds: f64, translated: bool) -> Res<()> {
-    db::log_listen(&state.ctx.db.lock().unwrap(), &episode_id, &show_id, seconds, translated).map_err(e)
+    db::log_listen(&state.ctx.db.lock(), &episode_id, &show_id, seconds, translated).map_err(e)
 }
 
 #[tauri::command(async)]
 fn listening_stats(state: State<'_, AppState>, since: String) -> Res<Vec<Value>> {
-    db::listens_since(&state.ctx.db.lock().unwrap(), &since).map_err(e)
+    db::listens_since(&state.ctx.db.lock(), &since).map_err(e)
 }
 
 #[tauri::command]
@@ -740,12 +822,12 @@ fn delete_model(state: State<'_, AppState>, id: String) -> Res<()> {
 
 #[tauri::command(async)]
 fn get_blob(state: State<'_, AppState>, episode_id: String, kind: String) -> Res<Option<String>> {
-    db::get_blob(&state.ctx.db.lock().unwrap(), &episode_id, &kind).map_err(e)
+    db::get_blob(&state.ctx.db.lock(), &episode_id, &kind).map_err(e)
 }
 
 #[tauri::command(async)]
 fn set_blob(state: State<'_, AppState>, episode_id: String, kind: String, data: String) -> Res<()> {
-    db::set_blob(&state.ctx.db.lock().unwrap(), &episode_id, &kind, &data).map_err(e)
+    db::set_blob(&state.ctx.db.lock(), &episode_id, &kind, &data).map_err(e)
 }
 
 #[tauri::command(async)]
@@ -780,19 +862,23 @@ async fn llm_chat(
     json_mode: Option<bool>,
     quick: Option<bool>,
 ) -> Res<String> {
-    let sink = TauriSink(app);
-    ops::llm_chat(&state.ctx, &request_id, &provider, &system, &messages, max_tokens, json_mode, quick, &sink)
-        .await
-        .map_err(e)
+    guard::guarded(async move {
+        let sink = TauriSink(app);
+        ops::llm_chat(&state.ctx, &request_id, &provider, &system, &messages, max_tokens, json_mode, quick, &sink)
+            .await
+            .map_err(e)
+    }).await
 }
 
 #[tauri::command]
 async fn youtube_subscriptions(state: State<'_, AppState>, browser: String) -> Res<Vec<import::Channel>> {
-    if !matches!(browser.as_str(), "chrome" | "safari" | "firefox" | "edge" | "brave" | "chromium" | "opera" | "vivaldi") {
-        return Err("不支持这个浏览器".into());
-    }
-    let bin = asr::ytdlp(&state.ctx.data).await.map_err(e)?;
-    import::youtube_subscriptions(&bin, &browser).await.map_err(e)
+    guard::guarded(async move {
+        if !matches!(browser.as_str(), "chrome" | "safari" | "firefox" | "edge" | "brave" | "chromium" | "opera" | "vivaldi") {
+            return Err("不支持这个浏览器".into());
+        }
+        let bin = asr::ytdlp(&state.ctx.data).await.map_err(e)?;
+        import::youtube_subscriptions(&bin, &browser).await.map_err(e)
+    }).await
 }
 
 #[tauri::command]
@@ -806,32 +892,42 @@ fn export_opml(state: State<'_, AppState>) -> Res<String> {
 }
 
 #[tauri::command]
-async fn local_agents() -> Vec<agents::Found> {
-    agents::detect().await
+async fn local_agents() -> Res<Vec<agents::Found>> {
+    guard::guarded(async move {
+        Ok(agents::detect().await)
+    }).await
 }
 
 #[tauri::command]
 async fn probe_agent(kind: String) -> Res<String> {
-    let k = agents::Kind::parse(&kind).ok_or("未知的本机 AI")?;
-    let path = agents::path_of(k).ok_or("没有找到")?;
-    agents::probe(k, &path).await.map(str::to_string).map_err(e)
+    guard::guarded(async move {
+        let k = agents::Kind::parse(&kind).ok_or("未知的本机 AI")?;
+        let path = agents::path_of(k).ok_or("没有找到")?;
+        agents::probe(k, &path).await.map(str::to_string).map_err(e)
+    }).await
 }
 
 #[tauri::command]
 async fn agent_models(kind: String) -> Res<Vec<agents::AgentModel>> {
-    let k = agents::Kind::parse(&kind).ok_or("未知的本机 AI")?;
-    let path = agents::path_of(k).ok_or("没有找到")?;
-    agents::models(k, &path).await.map_err(e)
+    guard::guarded(async move {
+        let k = agents::Kind::parse(&kind).ok_or("未知的本机 AI")?;
+        let path = agents::path_of(k).ok_or("没有找到")?;
+        agents::models(k, &path).await.map_err(e)
+    }).await
 }
 
 #[tauri::command]
 async fn app_update_check(app: AppHandle) -> Res<Option<appupdate::Found>> {
-    appupdate::check(&app).await.map_err(e)
+    guard::guarded(async move {
+        appupdate::check(&app).await.map_err(e)
+    }).await
 }
 
 #[tauri::command]
 async fn app_update_download(app: AppHandle) -> Res<()> {
-    appupdate::download(&app).await.map_err(e)
+    guard::guarded(async move {
+        appupdate::download(&app).await.map_err(e)
+    }).await
 }
 
 #[tauri::command]
@@ -840,22 +936,27 @@ fn app_update_install(app: AppHandle) -> Res<()> {
 }
 
 #[tauri::command]
-async fn warm_agent(kind: String) {
-    if let Some(k) = agents::Kind::parse(&kind) {
-        if let Some(p) = agents::path_of(k) {
-            agents::warm(k, &p).await;
+async fn warm_agent(kind: String) -> Res<()> {
+    guard::guarded(async move {
+        if let Some(k) = agents::Kind::parse(&kind) {
+            if let Some(p) = agents::path_of(k) {
+                agents::warm(k, &p).await;
+            }
         }
-    }
+        Ok(())
+    }).await
 }
 
 #[tauri::command]
 async fn translate_texts(state: State<'_, AppState>, texts: Vec<String>, target: Option<String>) -> Res<Vec<String>> {
-    ops::translate_texts(&state.ctx, &texts, target.as_deref()).await.map_err(e)
+    guard::guarded(async move {
+        ops::translate_texts(&state.ctx, &texts, target.as_deref()).await.map_err(e)
+    }).await
 }
 
 #[tauri::command]
 fn db_data_version(state: State<'_, AppState>) -> Res<i64> {
-    db::data_version(&state.ctx.db.lock().unwrap()).map_err(e)
+    db::data_version(&state.ctx.db.lock()).map_err(e)
 }
 
 #[derive(Serialize)]
@@ -965,7 +1066,9 @@ fn with_path(mut status: CliStatus) -> CliStatus {
 // Async: finding the PATH asks the listener's shell, which can take a few seconds.
 #[tauri::command]
 async fn cli_status() -> Res<CliStatus> {
-    tokio::task::spawn_blocking(inspect_cli_status).await.map_err(e)
+    guard::guarded(async move {
+        tokio::task::spawn_blocking(inspect_cli_status).await.map_err(e)
+    }).await
 }
 
 fn bundled_cli() -> Res<std::path::PathBuf> {
@@ -974,25 +1077,33 @@ fn bundled_cli() -> Res<std::path::PathBuf> {
 
 #[tauri::command]
 async fn mcp_targets() -> Res<Vec<subcast_core::mcp_targets::McpTarget>> {
-    let cli = bundled_cli()?;
-    Ok(subcast_core::mcp_targets::list(&cli))
+    guard::guarded(async move {
+        let cli = bundled_cli()?;
+        Ok(subcast_core::mcp_targets::list(&cli))
+    }).await
 }
 
 #[tauri::command]
 async fn mcp_connect(id: String) -> Res<subcast_core::mcp_targets::McpTarget> {
-    let cli = bundled_cli()?;
-    subcast_core::mcp_targets::connect(&id, &cli).await.map_err(e)
+    guard::guarded(async move {
+        let cli = bundled_cli()?;
+        subcast_core::mcp_targets::connect(&id, &cli).await.map_err(e)
+    }).await
 }
 
 #[tauri::command]
 async fn mcp_disconnect(id: String) -> Res<subcast_core::mcp_targets::McpTarget> {
-    let cli = bundled_cli()?;
-    subcast_core::mcp_targets::disconnect(&id, &cli).await.map_err(e)
+    guard::guarded(async move {
+        let cli = bundled_cli()?;
+        subcast_core::mcp_targets::disconnect(&id, &cli).await.map_err(e)
+    }).await
 }
 
 #[tauri::command]
 async fn cli_install() -> Res<CliStatus> {
-    tokio::task::spawn_blocking(|| install_cli_link().map(with_path)).await.map_err(e)?
+    guard::guarded(async move {
+        tokio::task::spawn_blocking(|| install_cli_link().map(with_path)).await.map_err(e)?
+    }).await
 }
 
 /// Puts the `subcast` command on the PATH by itself, so it works right after installing the app: once on the first
@@ -1094,6 +1205,9 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_process::init())
         .setup(|app| {
+            if let Ok(dir) = app.path().app_log_dir() {
+                panic_log::install(dir, app.package_info().version.to_string());
+            }
             #[cfg(desktop)]
             app.handle().plugin(tauri_plugin_updater::Builder::new().build())?;
             ytlogin::init(app.handle());
@@ -1106,9 +1220,9 @@ pub fn run() {
             // `tauri dev` loads the interface from the dev server (already http://localhost); every built app serves
             // its own. Debug builds skip interface updates: they show the interface they were built with.
             let (ui, ui_port): (ota::Active, u16) = if tauri::is_dev() {
-                (Arc::new(std::sync::RwLock::new(None)), 0)
+                (Arc::new(parking_lot::RwLock::new(None)), 0)
             } else {
-                let active = Arc::new(std::sync::RwLock::new(if cfg!(debug_assertions) { None } else { ota::boot(&data) }));
+                let active = Arc::new(parking_lot::RwLock::new(if cfg!(debug_assertions) { None } else { ota::boot(&data) }));
                 let port = serve_ui(app.handle(), active.clone());
                 (active, port)
             };
@@ -1164,7 +1278,7 @@ pub fn run() {
                 let _ = app.emit("open-settings", ());
             }
         })
-        .invoke_handler(tauri::generate_handler![
+        .invoke_handler(guard::catch_sync(tauri::generate_handler![
             add_subscription, refresh_show, refresh_all, list_shows, list_episodes, recent_episodes, get_episode, remove_show,
             set_progress, set_watched, mark_show_watched, search_podcasts, search_show, load_transcript, fetch_official_transcript, transcribe, cancel_job, asr_models,
             download_model, delete_model, get_blob, set_blob, get_settings, set_settings, set_api_key, has_api_key, llm_chat, translate_texts, shared_transcript, shared_exists, shared_guide, share_guide, asr_elsewhere, log_listen, listening_stats, rescan_models, youtube_subscriptions, open_privacy_settings, export_opml, local_agents, probe_agent, agent_models, warm_agent, share_translation, ui_ready, ui_check, refresh_config, youtube_stream, prepare_youtube, youtube_sign_in, youtube_signed_in, youtube_sign_out, network_check, youtube_tracks, use_youtube_track, youtube_channel_feed, qiaomu_detail, preview_show, list_models, tts_speak, cached_show, save_image, learn_clip, save_text, export_anki, set_menu_labels,
@@ -1173,7 +1287,7 @@ pub fn run() {
             download_episode, list_downloads, delete_download, clear_downloads, align_audio, save_time_map, list_audio_cache, audio_stream, clear_audio_cache, storage_info, open_data_folder, reveal_download, clear_temp, full_notes, tts_synthesize, tts_system_voices, clear_tts_cache, local_tts_status, local_tts_install, local_tts_delete,
             video_clip_env, video_clip_warm, video_clip_prepare, video_clip_render, reveal_file,
             db_data_version, cli_status, cli_install, mcp_targets, mcp_connect, mcp_disconnect
-        ])
+        ]))
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

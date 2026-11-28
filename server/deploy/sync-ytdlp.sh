@@ -2,7 +2,7 @@
 # Mirrors the latest yt-dlp release for the app (https://subcast.qiaomu.ai/tools/yt-dlp/), so first-time setup
 # doesn't depend on reaching GitHub. Every file is checked against the release's SHA2-256SUMS before it replaces
 # the old one; VERSION is written last, so clients never see a version whose files are not in place.
-# Cron: 17 */6 * * * root /opt/qiaomu-apps/subcast-api/sync-ytdlp.sh >> /var/log/subcast-ytdlp.log 2>&1
+# Cron: 17 */6 * * * root /opt/qiaomu-apps/subcast-api/deploy/sync-ytdlp.sh >> /var/log/subcast-ytdlp.log 2>&1
 set -euo pipefail
 DEST=${DEST:-/www/wwwroot/subcast-tools/yt-dlp}
 FILES=(yt-dlp_macos yt-dlp.exe yt-dlp_linux yt-dlp_linux_aarch64)

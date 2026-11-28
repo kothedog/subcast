@@ -76,7 +76,7 @@ pub async fn run_ep(ctx: &CoreCtx, args: EpArgs, out: Out) -> Result<(), CliErro
     match action {
         EpAction::List { show, limit } => {
             let library = {
-                let conn = ctx.db.lock().unwrap();
+                let conn = ctx.db.lock();
                 match show.as_deref() {
                     Some(r) => resolver::resolve_show(&conn, r).ok().map(|s| db::list_episodes(&conn, Some(&s.id), limit)).transpose()?,
                     None => Some(db::recent_episodes(&conn, limit)?),
@@ -107,7 +107,7 @@ pub async fn run_ep(ctx: &CoreCtx, args: EpArgs, out: Out) -> Result<(), CliErro
         EpAction::Show { reference } => {
             let ep = resolve_or_ingest_episode(ctx, &reference).await?;
             let (tr, guide) = {
-                let conn = ctx.db.lock().unwrap();
+                let conn = ctx.db.lock();
                 let tr = db::get_transcript(&conn, &ep.id)?;
                 let guide = db::get_blob(&conn, &ep.id, "summary")?.filter(|s| !s.trim().is_empty());
                 (tr, guide.is_some())
@@ -147,7 +147,7 @@ pub async fn run_ep(ctx: &CoreCtx, args: EpArgs, out: Out) -> Result<(), CliErro
         EpAction::Progress { reference, time } => {
             let ep = resolve_or_ingest_episode(ctx, &reference).await?;
             let sec = resolver::parse_timestamp(&time)?;
-            db::set_progress(&ctx.db.lock().unwrap(), &ep.id, sec)?;
+            db::set_progress(&ctx.db.lock(), &ep.id, sec)?;
             out.ok(&json!({ "episodeId": ep.id, "progress": sec }), || {
                 println!("Updated progress for {} to {}", ep.id, format_duration(sec));
             });
@@ -160,7 +160,7 @@ pub async fn run_ep(ctx: &CoreCtx, args: EpArgs, out: Out) -> Result<(), CliErro
                 "auto" | "clear" | "none" => None,
                 _ => return Err(CliError::usage("state must be done | unseen | auto")),
             };
-            db::set_watched(&ctx.db.lock().unwrap(), &ep.id, val)?;
+            db::set_watched(&ctx.db.lock(), &ep.id, val)?;
             out.ok(&json!({ "episodeId": ep.id, "watchedOverride": val }), || {
                 println!("Set watched state for {} -> {:?}", ep.id, val);
             });
@@ -175,7 +175,7 @@ pub async fn run_fav(ctx: &CoreCtx, args: FavArgs, out: Out) -> Result<(), CliEr
         FavAction::List => {
             let favs = ops::favorites_list(ctx)?;
             out.ok(&favs, || {
-                let conn = ctx.db.lock().unwrap();
+                let conn = ctx.db.lock();
                 for f in &favs {
                     let title = db::get_episode(&conn, &f.id)
                         .ok()
@@ -211,7 +211,7 @@ pub async fn run_stats(
         "30d" => (chrono::Local::now() - chrono::Duration::days(30)).format("%Y-%m-%d").to_string(),
         _ => "1970-01-01".to_string(),
     };
-    let rows: Vec<Value> = db::listens_since(&ctx.db.lock().unwrap(), &since)?;
+    let rows: Vec<Value> = db::listens_since(&ctx.db.lock(), &since)?;
     let total_secs: f64 = rows.iter().filter_map(|r| r["seconds"].as_f64()).sum();
     if args.portrait {
         let portrait = ai::generate_portrait(
